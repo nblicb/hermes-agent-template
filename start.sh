@@ -22,6 +22,11 @@ terminal:
 agent:
   max_iterations: 50
 
+display:
+  platforms:
+    telegram:
+      tool_progress: "new"
+
 logging:
   level: "DEBUG"
 
