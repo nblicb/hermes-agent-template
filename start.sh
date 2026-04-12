@@ -22,6 +22,9 @@ terminal:
 agent:
   max_iterations: 50
 
+platform_toolsets:
+  telegram: [web, memory]
+
 display:
   platforms:
     telegram:
