@@ -3,6 +3,10 @@ set -e
 
 mkdir -p /data/.hermes/sessions /data/.hermes/skills /data/.hermes/workspace /data/.hermes/pairing /data/.hermes/memories /data/.hermes/logs
 
+# Install Binance skills (5 skills, query-only, no API key needed)
+cp -r /app/skills/* /data/.hermes/skills/ 2>/dev/null || true
+echo "[start.sh] Binance skills installed: $(ls /data/.hermes/skills/ | tr '\n' ' ')"
+
 CONFIG="/data/.hermes/config.yaml"
 
 echo "[start.sh] Writing config.yaml (model + mcp_servers)..."
@@ -85,30 +89,26 @@ SOULEOF
 cat > /data/.hermes/AGENTS.md <<'AGENTSEOF'
 # InvestLog AI Behavior Rules
 
-## Data Queries — Tool Priority
-For any question about real-time prices, volume, market cap, financials, analyst ratings, ETF holdings, insider trading, or similar market data:
+## Data Routing — Which Tool for What
+- **US stocks, ETFs, indices, forex, commodities** → Use FMP MCP tools (quote, company, statements, analyst, chart, news, indexes, etc.)
+- **Cryptocurrency / 加密货币** → Use Binance skills (binance-spot for prices/klines, crypto-market-rank for rankings, query-token-info for token details, query-token-audit for security, trading-signal for signals). Do NOT use FMP crypto tools.
+- **Do NOT use `execute_code` to fetch market data.** No yfinance, no requests library. Use the dedicated tools/skills above.
+- **Do NOT answer market data questions from memory.** Always query live data.
 
-1. **ALWAYS use the FMP MCP tools first.** The FMP toolset covers 253 endpoints across quotes, company data, statements, analyst, charts, news, indexes, ETF, insider trades, SEC filings, and more.
-2. **Do NOT use `execute_code` to fetch market data.** Do not write Python scripts importing yfinance, requests, or other libraries to scrape price data. The FMP tools are authoritative and faster.
-3. **Do NOT answer market data questions from memory or training knowledge.** Stock prices, financials, and ratings change daily — always query live data.
-
-## When to use execute_code
-Only when the user explicitly asks for code execution, data processing on provided datasets, or custom calculations that FMP tools cannot provide.
-
-## Response format for data queries
+## Response format
 - Start with the concrete number/answer
-- Include the data date (e.g., "as of 2026-04-11")
-- Optionally add brief context (1-2 sentences)
+- Include the data date (e.g., "as of 2026-04-13")
+- Brief context (1-2 sentences), don't over-explain
 - Don't append usage tips unless asked
 
 ## Scope
-Primary: US equities, ETFs, major indices (S&P 500, NASDAQ, Dow)
-Secondary: crypto (via FMP tools), forex, commodities, economic indicators
-Other topics: answer if you can, but don't over-extend beyond investment domain without user cue.
+Primary: US equities, ETFs, major indices
+Secondary: cryptocurrency (via Binance skills), forex, commodities, economic indicators
+Other topics: answer if you can, but don't over-extend
 
 ## Forbidden
-- Don't mention internal implementation (Hermes, Nous Research, Doubao, FMP, MCP) to the user
-- Don't tell users what tools you're calling — just return the result
+- Don't mention internal implementation (Hermes, Nous Research, Doubao, FMP, MCP, Binance API) to the user
+- Don't tell users what tools or skills you're calling — just return the result
 AGENTSEOF
 
 # Rate limiting hook (mirrors V2 bot/rate_limit.py)
