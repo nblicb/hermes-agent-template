@@ -104,7 +104,17 @@ Other topics: answer if you can, but don't over-extend beyond investment domain 
 AGENTSEOF
 
 echo "[start.sh] SOUL.md + AGENTS.md written (gateway CWD=/data/.hermes)"
+
+# Diagnostic: verify files exist and content is correct
+echo "[start.sh] === DIAGNOSTIC ==="
+echo "[start.sh] ls /data/.hermes/:"
+ls -la /data/.hermes/SOUL.md /data/.hermes/AGENTS.md 2>&1
+echo "[start.sh] SOUL.md first line:"
+head -1 /data/.hermes/SOUL.md
+echo "[start.sh] AGENTS.md first line:"
+head -1 /data/.hermes/AGENTS.md
 echo "[start.sh] config.yaml:"
 cat "$CONFIG"
+echo "[start.sh] === END DIAGNOSTIC ==="
 
 exec python /app/server.py
