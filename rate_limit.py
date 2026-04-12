@@ -1,13 +1,15 @@
 """
-Rate limiting monkey-patch for Hermes gateway.
+Rate limiting + usage logging monkey-patch for Hermes gateway.
 
-Patches GatewayRunner._handle_message to add rate limiting before
-message processing. Mirrors V2 bot/rate_limit.py protections.
+Patches GatewayRunner._handle_message to:
+1. Rate limit (cooldown, ban, quota, input length)
+2. Log every query to PostgreSQL il_chat_usage table (same as web-app)
 
 Import this module before starting the gateway to activate the patch.
-If patching fails (e.g. Hermes API changed), falls back silently.
+If patching fails, falls back silently (no rate limiting, no logging).
 """
 
+import os
 import time
 import logging
 import datetime
@@ -30,6 +32,50 @@ _strike_count: dict[str, int] = {}
 _banned_until: dict[str, float] = {}
 _global_ts: deque[float] = deque()
 _daily_count: dict[tuple[str, str], int] = {}
+
+# ── DB connection for usage logging ────────────────────────────
+_db_conn = None
+
+def _get_db():
+    global _db_conn
+    if _db_conn is not None:
+        try:
+            _db_conn.cursor().execute("SELECT 1")
+            return _db_conn
+        except Exception:
+            _db_conn = None
+    db_url = os.environ.get("DATABASE_URL", "")
+    if not db_url:
+        return None
+    try:
+        import psycopg2
+        _db_conn = psycopg2.connect(db_url)
+        _db_conn.autocommit = True
+        return _db_conn
+    except Exception as e:
+        logger.debug("DB connection failed: %s", e)
+        return None
+
+
+def _log_usage(user_id: str, platform: str, query_text: str,
+               response_preview: str = None, elapsed_ms: int = None, error: str = None):
+    """Log usage to il_chat_usage table (same table as web-app)."""
+    conn = _get_db()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        today = datetime.date.today().isoformat()
+        cur.execute(
+            """INSERT INTO il_chat_usage
+               (user_id, used_date, query, ip, response_preview, elapsed_ms, error, created_at)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, NOW())""",
+            (f"tg:{user_id}", today, (query_text or "")[:200], platform,
+             (response_preview or "")[:500] if response_preview else None,
+             elapsed_ms, (error or "")[:200] if error else None)
+        )
+    except Exception as e:
+        logger.debug("Usage log failed: %s", e)
 
 
 def _record_strike(uid: str):
@@ -91,7 +137,7 @@ def check_rate_limit(uid: str, message: str) -> str | None:
 
 
 def apply_patch():
-    """Monkey-patch GatewayRunner._handle_message with rate limiting."""
+    """Monkey-patch GatewayRunner._handle_message with rate limiting + logging."""
     try:
         from gateway.run import GatewayRunner
         _original = GatewayRunner._handle_message
@@ -99,13 +145,18 @@ def apply_patch():
         async def _patched_handle_message(self, event):
             uid = getattr(getattr(event, 'source', None), 'user_id', None)
             msg = getattr(event, 'text', '') or ''
+            platform = getattr(getattr(event, 'source', None), 'platform', None)
+            platform_name = platform.value if platform else "unknown"
+            start_ms = time.monotonic()
 
             if uid:
-                err = check_rate_limit(str(uid), msg)
+                uid_str = str(uid)
+                # Rate limit check
+                err = check_rate_limit(uid_str, msg)
                 if err:
                     logger.info("Rate limited user %s: %s", uid, err)
+                    _log_usage(uid_str, platform_name, msg, error="rate_limited")
                     try:
-                        platform = getattr(getattr(event, 'source', None), 'platform', None)
                         chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
                         adapter = self.adapters.get(platform)
                         if adapter and chat_id:
@@ -114,14 +165,23 @@ def apply_patch():
                         logger.debug("Failed to send rate limit message: %s", e)
                     return None
 
-            return await _original(self, event)
+            # Call original handler
+            result = await _original(self, event)
+
+            # Log usage after response
+            if uid:
+                elapsed = int((time.monotonic() - start_ms) * 1000)
+                response_preview = result[:500] if isinstance(result, str) else None
+                _log_usage(str(uid), platform_name, msg, response_preview, elapsed)
+
+            return result
 
         GatewayRunner._handle_message = _patched_handle_message
-        logger.info("Rate limiting patch applied (admin: %s)", ADMIN_IDS)
-        print("[rate_limit] Monkey-patch applied successfully", flush=True)
+        logger.info("Rate limiting + logging patch applied (admin: %s)", ADMIN_IDS)
+        print("[rate_limit] Monkey-patch applied (rate limiting + DB logging)", flush=True)
         return True
 
     except Exception as e:
         logger.error("Failed to apply rate limit patch: %s", e)
-        print(f"[rate_limit] Patch FAILED (falling back to no rate limiting): {e}", flush=True)
+        print(f"[rate_limit] Patch FAILED: {e}", flush=True)
         return False
