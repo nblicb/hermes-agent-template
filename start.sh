@@ -232,4 +232,21 @@ echo "[start.sh] config.yaml:"
 cat "$CONFIG"
 echo "[start.sh] === END DIAGNOSTIC ==="
 
+# Set Telegram bot menu commands (runs once at boot)
+if [ -n "$TELEGRAM_BOT_TOKEN" ]; then
+  curl -s --max-time 10 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/setMyCommands" \
+    -H "Content-Type: application/json" \
+    -d '{"commands":[{"command":"help","description":"Show all commands"},{"command":"watch","description":"Manage watchlist"},{"command":"alert","description":"Price alerts"},{"command":"usage","description":"Daily quota"},{"command":"pro","description":"Upgrade to Pro"},{"command":"notify","description":"Push settings"},{"command":"new","description":"New conversation"}]}' > /dev/null 2>&1
+  echo "[start.sh] Telegram menu commands set"
+else
+  # Read from admin config
+  TGTOKEN=$(grep TELEGRAM_BOT_TOKEN /data/.hermes/.env 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'")
+  if [ -n "$TGTOKEN" ]; then
+    curl -s --max-time 10 "https://api.telegram.org/bot${TGTOKEN}/setMyCommands" \
+      -H "Content-Type: application/json" \
+      -d '{"commands":[{"command":"help","description":"Show all commands"},{"command":"watch","description":"Manage watchlist"},{"command":"alert","description":"Price alerts"},{"command":"usage","description":"Daily quota"},{"command":"pro","description":"Upgrade to Pro"},{"command":"notify","description":"Push settings"},{"command":"new","description":"New conversation"}]}' > /dev/null 2>&1
+    echo "[start.sh] Telegram menu commands set (from .env)"
+  fi
+fi
+
 exec python /app/server.py
