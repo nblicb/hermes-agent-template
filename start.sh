@@ -103,10 +103,7 @@ Other topics: answer if you can, but don't over-extend beyond investment domain 
 - Don't tell users what tools you're calling — just return the result
 AGENTSEOF
 
-# Also copy AGENTS.md to /app/ (Dockerfile WORKDIR) in case gateway CWD is /app
-cp /data/.hermes/AGENTS.md /app/AGENTS.md 2>/dev/null || true
-
-echo "[start.sh] SOUL.md + AGENTS.md written"
+echo "[start.sh] SOUL.md + AGENTS.md written (gateway CWD=/data/.hermes)"
 echo "[start.sh] config.yaml:"
 cat "$CONFIG"
 

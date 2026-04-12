@@ -248,6 +248,7 @@ class Gateway:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.STDOUT,
                 env=env,
+                cwd="/data/.hermes",
             )
             self.state = "running"
             self.started_at = time.time()
