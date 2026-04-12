@@ -165,8 +165,33 @@ def apply_patch():
                         logger.debug("Failed to send rate limit message: %s", e)
                     return None
 
+            # Send "querying" status message before agent runs
+            status_msg_id = None
+            try:
+                chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
+                adapter = self.adapters.get(platform)
+                if adapter and chat_id:
+                    sent = await adapter.send(chat_id, "🔍 正在查询数据...")
+                    # Try to get message ID for later deletion
+                    if sent and hasattr(sent, 'message_id'):
+                        status_msg_id = sent.message_id
+                    elif sent and isinstance(sent, dict):
+                        status_msg_id = sent.get('message_id')
+            except Exception:
+                pass
+
             # Call original handler
             result = await _original(self, event)
+
+            # Delete status message after response
+            if status_msg_id:
+                try:
+                    chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
+                    adapter = self.adapters.get(platform)
+                    if adapter and hasattr(adapter, '_bot') and chat_id:
+                        await adapter._bot.delete_message(chat_id=chat_id, message_id=status_msg_id)
+                except Exception:
+                    pass  # Message may already be gone
 
             # Log usage after response
             if uid:
