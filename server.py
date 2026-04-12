@@ -361,6 +361,57 @@ async def api_logs(request: Request):
     return JSONResponse({"lines": list(gw.logs)})
 
 
+async def api_debug_files(request: Request):
+    """Temporary diagnostic: read files from HERMES_HOME for debugging."""
+    if err := guard(request): return err
+    import sqlite3
+    result = {}
+    hermes_home = Path(HERMES_HOME)
+
+    # List sessions directory
+    sessions_dir = hermes_home / "sessions"
+    if sessions_dir.exists():
+        result["sessions_files"] = sorted(str(f.name) for f in sessions_dir.iterdir())[:20]
+
+    # Read sessions.json
+    sj = sessions_dir / "sessions.json"
+    if sj.exists():
+        try:
+            import json as jmod
+            result["sessions_json"] = jmod.loads(sj.read_text())
+        except Exception as e:
+            result["sessions_json_error"] = str(e)
+
+    # Check state.db
+    db_path = hermes_home / "state.db"
+    if db_path.exists():
+        result["state_db_exists"] = True
+        try:
+            conn = sqlite3.connect(str(db_path))
+            cur = conn.cursor()
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+            result["state_db_tables"] = [r[0] for r in cur.fetchall()]
+            # Get recent sessions with token counts
+            try:
+                cur.execute("SELECT id, source, user_id, model, started_at, ended_at, input_tokens, output_tokens, total_tokens FROM sessions ORDER BY started_at DESC LIMIT 5")
+                cols = [d[0] for d in cur.description]
+                result["recent_sessions"] = [dict(zip(cols, r)) for r in cur.fetchall()]
+            except Exception as e:
+                result["sessions_query_error"] = str(e)
+            conn.close()
+        except Exception as e:
+            result["state_db_error"] = str(e)
+    else:
+        result["state_db_exists"] = False
+
+    # List logs directory
+    logs_dir = hermes_home / "logs"
+    if logs_dir.exists():
+        result["log_files"] = [(f.name, f.stat().st_size) for f in sorted(logs_dir.iterdir())]
+
+    return JSONResponse(result)
+
+
 async def api_gw_start(request: Request):
     if err := guard(request): return err
     asyncio.create_task(gw.start())
@@ -502,6 +553,7 @@ routes = [
     Route("/api/config",                api_config_put,      methods=["PUT"]),
     Route("/api/status",                api_status),
     Route("/api/logs",                  api_logs),
+    Route("/api/debug/files",           api_debug_files),
     Route("/api/gateway/start",         api_gw_start,        methods=["POST"]),
     Route("/api/gateway/stop",          api_gw_stop,         methods=["POST"]),
     Route("/api/gateway/restart",       api_gw_restart,      methods=["POST"]),
