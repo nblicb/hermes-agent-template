@@ -31,9 +31,7 @@ if [ -n "$FMP_API_KEY" ]; then
 
 mcp_servers:
   fmp:
-    url: "https://financialmodelingprep.com/mcp"
-    headers:
-      apikey: "${FMP_API_KEY}"
+    url: "https://financialmodelingprep.com/mcp?apikey=${FMP_API_KEY}"
     timeout: 120
 EOF
   echo "[start.sh] FMP MCP server configured (official HTTP endpoint)"
