@@ -17,6 +17,7 @@ RUN mkdir -p /data/.hermes
 
 COPY server.py /app/server.py
 COPY rate_limit.py /app/rate_limit.py
+COPY commands.py /app/commands.py
 COPY gateway_wrapper.py /app/gateway_wrapper.py
 COPY templates/ /app/templates/
 COPY skills/ /app/skills/

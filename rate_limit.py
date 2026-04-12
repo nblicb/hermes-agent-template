@@ -151,7 +151,25 @@ def apply_patch():
 
             if uid:
                 uid_str = str(uid)
-                # Rate limit check
+
+                # Slash command intercept (zero tokens, direct DB)
+                try:
+                    from commands import dispatch_command
+                    cmd_response = dispatch_command(uid_str, msg)
+                    if cmd_response is not None:
+                        _log_usage(uid_str, platform_name, msg, cmd_response[:200], 0, None)
+                        try:
+                            chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
+                            adapter = self.adapters.get(platform)
+                            if adapter and chat_id:
+                                await adapter.send(chat_id, cmd_response)
+                        except Exception as e:
+                            logger.debug("Failed to send command response: %s", e)
+                        return None
+                except Exception as e:
+                    logger.debug("Command dispatch error: %s", e)
+
+                # Rate limit check (only for non-command messages)
                 err = check_rate_limit(uid_str, msg)
                 if err:
                     logger.info("Rate limited user %s: %s", uid, err)
