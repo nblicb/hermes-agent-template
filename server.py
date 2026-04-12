@@ -51,6 +51,8 @@ else:
 # (key, label, category, is_secret)
 ENV_VARS = [
     ("LLM_MODEL",               "Model",                    "model",     False),
+    ("OPENAI_API_KEY",           "OpenAI-compatible",        "provider",  True),
+    ("OPENAI_API_BASE",          "OpenAI Base URL",          "provider",  False),
     ("OPENROUTER_API_KEY",       "OpenRouter",               "provider",  True),
     ("DEEPSEEK_API_KEY",         "DeepSeek",                 "provider",  True),
     ("DASHSCOPE_API_KEY",        "DashScope",                "provider",  True),
@@ -119,25 +121,27 @@ def read_env(path: Path) -> dict[str, str]:
 
 
 def write_config_yaml(data: dict[str, str]) -> None:
-    """Write a minimal config.yaml so hermes picks up the model and provider."""
-    model = data.get("LLM_MODEL", "")
+    """Update model section in config.yaml without touching mcp_servers.
+
+    config.yaml is written by start.sh at container boot (model + mcp_servers).
+    This function only updates the model section when admin API changes LLM config.
+    """
+    import yaml
     config_path = Path(HERMES_HOME) / "config.yaml"
     config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(f"""\
-model:
-  default: "{model}"
-  provider: "auto"
-
-terminal:
-  backend: "local"
-  timeout: 60
-  cwd: "/tmp"
-
-agent:
-  max_iterations: 50
-
-data_dir: "{HERMES_HOME}"
-""")
+    config = {}
+    if config_path.exists():
+        config = yaml.safe_load(config_path.read_text()) or {}
+    config["model"] = {
+        "default": data.get("LLM_MODEL", ""),
+        "provider": "custom",
+        "base_url": data.get("OPENAI_API_BASE", ""),
+        "api_key": data.get("OPENAI_API_KEY", ""),
+    }
+    config.setdefault("terminal", {"backend": "local", "timeout": 60, "cwd": "/tmp"})
+    config.setdefault("agent", {"max_iterations": 50})
+    config["data_dir"] = HERMES_HOME
+    config_path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True))
 
 
 def write_env(path: Path, data: dict[str, str]) -> None:
