@@ -7,20 +7,8 @@ mkdir -p /data/.hermes/sessions /data/.hermes/skills /data/.hermes/workspace /da
 cp -r /app/skills/* /data/.hermes/skills/ 2>/dev/null || true
 echo "[start.sh] Binance skills installed: $(ls /data/.hermes/skills/ | tr '\n' ' ')"
 
-# ── Binance API connectivity test (one-time, at boot) ──
-echo "[start.sh] === BINANCE CONNECTIVITY TEST ==="
-echo "[start.sh] Test 1: Binance Spot API (api.binance.com)"
-curl -s -o /tmp/binance_spot.json -w "HTTP: %{http_code} Time: %{time_total}s" \
-  --max-time 10 "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT" 2>&1
-echo ""
-echo "[start.sh] Spot response: $(cat /tmp/binance_spot.json 2>/dev/null | head -c 200)"
-
-echo "[start.sh] Test 2: Binance Web3 API (web3.binance.com)"
-curl -s -o /tmp/binance_web3.json -w "HTTP: %{http_code} Time: %{time_total}s" \
-  --max-time 10 "https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list" 2>&1
-echo ""
-echo "[start.sh] Web3 response: $(cat /tmp/binance_web3.json 2>/dev/null | head -c 200)"
-echo "[start.sh] === END BINANCE TEST ==="
+# Binance API note: api.binance.com blocked from US IP (HTTP 451).
+# Web3 API (web3.binance.com) works. Only Web3 skills installed.
 
 CONFIG="/data/.hermes/config.yaml"
 
@@ -106,7 +94,8 @@ cat > /data/.hermes/AGENTS.md <<'AGENTSEOF'
 
 ## Data Routing — Which Tool for What
 - **US stocks, ETFs, indices, forex, commodities** → Use FMP MCP tools (quote, company, statements, analyst, chart, news, indexes, etc.)
-- **Cryptocurrency / 加密货币** → Use Binance skills (binance-spot for prices/klines, crypto-market-rank for rankings, query-token-info for token details, query-token-audit for security, trading-signal for signals). Do NOT use FMP crypto tools.
+- **Crypto prices and quotes** → Use FMP MCP crypto tools (cryptocurrency quote, chart, list)
+- **Crypto token details, rankings, security audit, trading signals** → Use Binance Web3 skills (crypto-market-rank, query-token-info, query-token-audit, trading-signal)
 - **Do NOT use `execute_code` to fetch market data.** No yfinance, no requests library. Use the dedicated tools/skills above.
 - **Do NOT answer market data questions from memory.** Always query live data.
 
