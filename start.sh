@@ -111,6 +111,104 @@ Other topics: answer if you can, but don't over-extend beyond investment domain 
 - Don't tell users what tools you're calling — just return the result
 AGENTSEOF
 
+# Rate limiting hook (mirrors V2 bot/rate_limit.py)
+mkdir -p /data/.hermes/hooks/rate_limit
+cat > /data/.hermes/hooks/rate_limit/HOOK.yaml <<'HOOKYAML'
+name: rate_limit
+description: Per-user rate limiting, daily quota, auto-ban (mirrors V2 bot protections)
+events:
+  - agent:start
+HOOKYAML
+
+cat > /data/.hermes/hooks/rate_limit/handler.py <<'HOOKPY'
+"""Rate limiting hook — fires on every agent:start event.
+
+Protections (same as V2 bot/rate_limit.py):
+1. Per-user cooldown: 15s between requests
+2. Auto-ban: 5 consecutive violations → 1 hour ban
+3. Input length: max 500 chars
+4. Global rate limit: 30 req/min
+5. Daily quota: 20 queries/user/day
+
+In-memory state resets on deploy. Acceptable for single-instance Railway.
+"""
+import time
+from collections import deque
+
+_user_last = {}        # user_id → monotonic timestamp
+_strike_count = {}     # user_id → consecutive violations
+_banned_until = {}     # user_id → monotonic ban expiry
+_global_ts = deque()   # sliding window timestamps
+_daily_count = {}      # (user_id, date_str) → count
+
+COOLDOWN = 15.0
+BAN_STRIKES = 5
+BAN_DURATION = 3600.0
+MAX_INPUT = 500
+GLOBAL_RPM = 30
+DAILY_QUOTA = 20
+
+
+def _record_strike(uid):
+    count = _strike_count.get(uid, 0) + 1
+    _strike_count[uid] = count
+    if count >= BAN_STRIKES:
+        _banned_until[uid] = time.monotonic() + BAN_DURATION
+        print(f"[rate_limit] user {uid} auto-banned for 1h after {count} strikes")
+
+
+def handle(event_type, context):
+    """Synchronous hook handler. Raise Exception to block the request."""
+    if event_type != "agent:start":
+        return
+
+    uid = context.get("user_id", "")
+    msg = context.get("message", "")
+    now = time.monotonic()
+
+    # 1. Ban check
+    ban_until = _banned_until.get(uid)
+    if ban_until and now < ban_until:
+        raise Exception("Too many violations. Try again in 1 hour.")
+    elif ban_until:
+        del _banned_until[uid]
+        _strike_count.pop(uid, None)
+
+    # 2. Input length
+    if len(msg) > MAX_INPUT:
+        raise Exception(f"Message too long (max {MAX_INPUT} chars).")
+
+    # 3. Global rate limit
+    while _global_ts and _global_ts[0] < now - 60:
+        _global_ts.popleft()
+    if len(_global_ts) >= GLOBAL_RPM:
+        raise Exception("System busy, please try again shortly.")
+    _global_ts.append(now)
+
+    # 4. Per-user cooldown
+    last = _user_last.get(uid, 0)
+    if now - last < COOLDOWN:
+        _record_strike(uid)
+        raise Exception("Please wait before sending another message.")
+    _user_last[uid] = now
+    _strike_count.pop(uid, None)
+
+    # 5. Daily quota
+    import datetime
+    today = datetime.date.today().isoformat()
+    key = (uid, today)
+    count = _daily_count.get(key, 0)
+    if count >= DAILY_QUOTA:
+        raise Exception(f"Daily limit reached ({DAILY_QUOTA}/day). Try again tomorrow.")
+    _daily_count[key] = count + 1
+
+    # Cleanup old daily entries
+    for k in list(_daily_count):
+        if k[1] != today:
+            del _daily_count[k]
+HOOKPY
+
+echo "[start.sh] Rate limit hook installed"
 echo "[start.sh] SOUL.md + AGENTS.md written (gateway CWD=/data/.hermes)"
 
 # Diagnostic: verify files exist and content is correct
