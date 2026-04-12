@@ -165,13 +165,15 @@ def apply_patch():
                         logger.debug("Failed to send rate limit message: %s", e)
                     return None
 
-            # Send "querying" status message before agent runs
+            # Send "querying" status message before agent runs (match user language)
             status_msg_id = None
             try:
                 chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
                 adapter = self.adapters.get(platform)
+                is_chinese = any('\u4e00' <= c <= '\u9fff' for c in msg)
+                status_text = "🔍 正在查询数据..." if is_chinese else "🔍 Fetching data..."
                 if adapter and chat_id:
-                    sent = await adapter.send(chat_id, "🔍 正在查询数据...")
+                    sent = await adapter.send(chat_id, status_text)
                     # Try to get message ID for later deletion
                     if sent and hasattr(sent, 'message_id'):
                         status_msg_id = sent.message_id
