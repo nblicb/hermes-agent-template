@@ -25,7 +25,7 @@ agent:
 display:
   platforms:
     telegram:
-      tool_progress: "new"
+      tool_progress: "off"
 
 logging:
   level: "DEBUG"
