@@ -222,6 +222,54 @@ def apply_patch():
             return result
 
         GatewayRunner._handle_message = _patched_handle_message
+
+        # Patch STT: replace Hermes built-in with Volcengine BigModel ASR
+        _volc_app_id = os.environ.get("VOLCENGINE_ASR_APP_ID", "")
+        _volc_token = os.environ.get("VOLCENGINE_ASR_TOKEN", "")
+        if _volc_app_id and _volc_token:
+            _original_enrich = GatewayRunner._enrich_message_with_transcription
+
+            async def _patched_enrich(self, event, source):
+                """Use Volcengine BigModel ASR instead of built-in STT."""
+                import asyncio
+                attachments = getattr(event, 'attachments', []) or []
+                voice_att = None
+                for att in attachments:
+                    mime = getattr(att, 'mime_type', '') or ''
+                    if mime.startswith('audio/') or mime.startswith('voice/'):
+                        voice_att = att
+                        break
+                if not voice_att:
+                    return await _original_enrich(self, event, source)
+
+                # Download audio
+                try:
+                    audio_path = getattr(voice_att, 'local_path', None) or getattr(voice_att, 'path', None)
+                    if audio_path:
+                        import pathlib
+                        audio_bytes = pathlib.Path(audio_path).read_bytes()
+                    elif hasattr(voice_att, 'data') and voice_att.data:
+                        audio_bytes = voice_att.data
+                    else:
+                        return await _original_enrich(self, event, source)
+
+                    from asr import transcribe_voice
+                    text = await transcribe_voice(audio_bytes)
+                    if text:
+                        event.text = text
+                        logger.info("Volcengine ASR: %s", text[:50])
+                        return text
+                    else:
+                        return await _original_enrich(self, event, source)
+                except Exception as e:
+                    logger.warning("Volcengine ASR failed, falling back: %s", e)
+                    return await _original_enrich(self, event, source)
+
+            GatewayRunner._enrich_message_with_transcription = _patched_enrich
+            print("[rate_limit] Volcengine ASR patch applied", flush=True)
+        else:
+            print("[rate_limit] Volcengine ASR not configured (using built-in STT)", flush=True)
+
         logger.info("Rate limiting + logging patch applied (admin: %s)", ADMIN_IDS)
         print("[rate_limit] Monkey-patch applied (rate limiting + DB logging)", flush=True)
         return True
