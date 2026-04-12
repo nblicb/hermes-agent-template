@@ -16,6 +16,8 @@ RUN uv pip install --system --no-cache -r /app/requirements.txt
 RUN mkdir -p /data/.hermes
 
 COPY server.py /app/server.py
+COPY rate_limit.py /app/rate_limit.py
+COPY gateway_wrapper.py /app/gateway_wrapper.py
 COPY templates/ /app/templates/
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
