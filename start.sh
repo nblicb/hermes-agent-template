@@ -25,24 +25,22 @@ agent:
 data_dir: "${HERMES_HOME:-/data/.hermes}"
 EOF
 
-# Append FMP MCP server if key is set
+# FMP official hosted MCP (HTTP mode, header auth)
 if [ -n "$FMP_API_KEY" ]; then
   cat >> "$CONFIG" <<EOF
 
 mcp_servers:
   fmp:
-    command: "npx"
-    args: ["-y", "financial-modeling-prep-mcp-server"]
-    env:
-      FMP_API_KEY: "${FMP_API_KEY}"
+    url: "https://financialmodelingprep.com/mcp"
+    headers:
+      apikey: "${FMP_API_KEY}"
     timeout: 120
 EOF
-  echo "[start.sh] FMP MCP server configured"
+  echo "[start.sh] FMP MCP server configured (official HTTP endpoint)"
 fi
 
-# Append Binance MCP if key is set
+# Binance MCP (stdio mode)
 if [ -n "$BINANCE_API_KEY" ]; then
-  # If no mcp_servers header yet (no FMP), add it
   if [ -z "$FMP_API_KEY" ]; then
     echo "" >> "$CONFIG"
     echo "mcp_servers:" >> "$CONFIG"
