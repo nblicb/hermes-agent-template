@@ -7,6 +7,21 @@ mkdir -p /data/.hermes/sessions /data/.hermes/skills /data/.hermes/workspace /da
 cp -r /app/skills/* /data/.hermes/skills/ 2>/dev/null || true
 echo "[start.sh] Binance skills installed: $(ls /data/.hermes/skills/ | tr '\n' ' ')"
 
+# ── Binance API connectivity test (one-time, at boot) ──
+echo "[start.sh] === BINANCE CONNECTIVITY TEST ==="
+echo "[start.sh] Test 1: Binance Spot API (api.binance.com)"
+curl -s -o /tmp/binance_spot.json -w "HTTP: %{http_code} Time: %{time_total}s" \
+  --max-time 10 "https://api.binance.com/api/v3/ticker/price?symbol=BTCUSDT" 2>&1
+echo ""
+echo "[start.sh] Spot response: $(cat /tmp/binance_spot.json 2>/dev/null | head -c 200)"
+
+echo "[start.sh] Test 2: Binance Web3 API (web3.binance.com)"
+curl -s -o /tmp/binance_web3.json -w "HTTP: %{http_code} Time: %{time_total}s" \
+  --max-time 10 "https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/cex/alpha/all/token/list" 2>&1
+echo ""
+echo "[start.sh] Web3 response: $(cat /tmp/binance_web3.json 2>/dev/null | head -c 200)"
+echo "[start.sh] === END BINANCE TEST ==="
+
 CONFIG="/data/.hermes/config.yaml"
 
 echo "[start.sh] Writing config.yaml (model + mcp_servers)..."
