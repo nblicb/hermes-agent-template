@@ -28,6 +28,7 @@ terminal:
 
 agent:
   max_iterations: 50
+  max_output_tokens: 2000
 
 platform_toolsets:
   telegram: [web, memory]
