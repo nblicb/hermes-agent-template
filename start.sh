@@ -218,6 +218,14 @@ def handle(event_type, context):
 HOOKPY
 
 echo "[start.sh] Rate limit hook installed"
+
+# Clear global memory files — per-user isolation patch writes to user_xxx/ dirs
+# This prevents stale global MEMORY.md/USER.md from leaking across users
+if [ -f /data/.hermes/memories/MEMORY.md ] || [ -f /data/.hermes/memories/USER.md ]; then
+  rm -f /data/.hermes/memories/MEMORY.md /data/.hermes/memories/USER.md
+  echo "[start.sh] Cleared global MEMORY.md/USER.md (per-user isolation active)"
+fi
+
 echo "[start.sh] SOUL.md + AGENTS.md written (gateway CWD=/data/.hermes)"
 
 # Diagnostic: verify files exist and content is correct

@@ -136,9 +136,92 @@ def check_rate_limit(uid: str, message: str) -> str | None:
     return None
 
 
+def _apply_memory_isolation_patch():
+    """Patch MemoryStore + AIAgent to use per-user memory directories.
+
+    Each user gets /data/.hermes/memories/user_{user_id}/ instead of the
+    shared global /data/.hermes/memories/. Fail-safe: if anything goes wrong,
+    memory is disabled for that user (never falls back to global).
+    """
+    try:
+        from tools.memory_tool import MemoryStore, get_memory_dir
+        from run_agent import AIAgent
+
+        # -- Patch MemoryStore methods to respect instance _mem_dir --
+
+        _orig_load = MemoryStore.load_from_disk
+        _orig_save = MemoryStore.save_to_disk
+        # _path_for is @staticmethod, replace with instance-aware version
+
+        def _patched_path_for(self, target: str):
+            from pathlib import Path
+            mem_dir = getattr(self, '_mem_dir', None) or get_memory_dir()
+            if target == "user":
+                return mem_dir / "USER.md"
+            return mem_dir / "MEMORY.md"
+
+        def _patched_load(self):
+            from pathlib import Path
+            mem_dir = getattr(self, '_mem_dir', None) or get_memory_dir()
+            mem_dir.mkdir(parents=True, exist_ok=True)
+            self.memory_entries = self._read_file(mem_dir / "MEMORY.md")
+            self.user_entries = self._read_file(mem_dir / "USER.md")
+            self.memory_entries = list(dict.fromkeys(self.memory_entries))
+            self.user_entries = list(dict.fromkeys(self.user_entries))
+            self._system_prompt_snapshot = {
+                "memory": self._render_block("memory", self.memory_entries),
+                "user": self._render_block("user", self.user_entries),
+            }
+
+        def _patched_save(self, target: str):
+            mem_dir = getattr(self, '_mem_dir', None) or get_memory_dir()
+            mem_dir.mkdir(parents=True, exist_ok=True)
+            self._write_file(self._path_for(target), self._entries_for(target))
+
+        MemoryStore.load_from_disk = _patched_load
+        MemoryStore.save_to_disk = _patched_save
+        MemoryStore._path_for = _patched_path_for
+
+        # -- Patch AIAgent.__init__ to set per-user _mem_dir --
+
+        _orig_agent_init = AIAgent.__init__
+
+        def _patched_agent_init(self, *args, **kwargs):
+            _orig_agent_init(self, *args, **kwargs)
+            try:
+                if getattr(self, '_user_id', None) and getattr(self, '_memory_store', None):
+                    from pathlib import Path
+                    from hermes_constants import get_hermes_home
+                    user_mem_dir = get_hermes_home() / "memories" / f"user_{self._user_id}"
+                    user_mem_dir.mkdir(parents=True, exist_ok=True)
+                    self._memory_store._mem_dir = user_mem_dir
+                    self._memory_store.load_from_disk()  # reload from per-user dir
+                    print(f"[MEMORY PATCH] user {self._user_id} -> {user_mem_dir}", flush=True)
+            except Exception as e:
+                # Fail-safe: disable memory, never fall back to global
+                logger.error("[MEMORY PATCH] Failed for user %s: %s",
+                             getattr(self, '_user_id', '?'), e)
+                self._memory_store = None
+                self._memory_enabled = False
+                self._user_profile_enabled = False
+
+        AIAgent.__init__ = _patched_agent_init
+
+        print("[MEMORY PATCH] Per-user memory isolation applied", flush=True)
+        return True
+
+    except Exception as e:
+        logger.error("[MEMORY PATCH] Failed to apply: %s", e)
+        print(f"[MEMORY PATCH] FAILED: {e}", flush=True)
+        return False
+
+
 def apply_patch():
     """Monkey-patch GatewayRunner._handle_message with rate limiting + logging."""
     try:
+        # Apply per-user memory isolation first
+        _apply_memory_isolation_patch()
+
         from gateway.run import GatewayRunner
         _original = GatewayRunner._handle_message
 
