@@ -189,7 +189,17 @@ def _apply_memory_isolation_patch():
         def _patched_agent_init(self, *args, **kwargs):
             _orig_agent_init(self, *args, **kwargs)
             try:
-                if getattr(self, '_user_id', None) and getattr(self, '_memory_store', None):
+                if not getattr(self, '_user_id', None):
+                    # No user_id (e.g. Web API without user context) → disable memory
+                    # Never allow fallback to global directory
+                    if getattr(self, '_memory_store', None):
+                        self._memory_store = None
+                        self._memory_enabled = False
+                        self._user_profile_enabled = False
+                        logger.warning("[MEMORY PATCH] No user_id, memory disabled")
+                    return
+
+                if getattr(self, '_memory_store', None):
                     from pathlib import Path
                     from hermes_constants import get_hermes_home
                     user_mem_dir = get_hermes_home() / "memories" / f"user_{self._user_id}"
