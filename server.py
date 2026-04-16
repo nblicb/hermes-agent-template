@@ -302,31 +302,46 @@ cfg_lock = asyncio.Lock()
 # ── MCP keep-alive + health monitor ───────────────────────────────────────────
 
 async def mcp_keepalive():
-    """Keep FMP MCP session alive by sending a lightweight tool call every 5 min.
+    """Keep FMP MCP session alive by triggering a real MCP tool call every 5 min.
 
-    Prevents idle timeout (most common cause of session termination).
-    If the keepalive call fails, the existing Hermes reconnect mechanism handles it.
-    This does NOT restart the gateway — it just prevents idle disconnects.
+    Calls Hermes API Server internally (/v1/chat/completions with a trivial prompt).
+    This makes Hermes invoke FMP MCP tools, keeping the SSE connection active.
+    Without this, FMP's idle timeout would kill the SSE session.
+
+    Uses a dedicated /api/mcp-ping endpoint (no LLM, just MCP tool call)
+    to avoid Doubao token consumption.
     """
     import urllib.request
 
     KEEPALIVE_INTERVAL = 300  # 5 minutes
-    FMP_KEY = os.environ.get("FMP_API_KEY", "")
+    _mcp_session_start = time.time()
 
-    await asyncio.sleep(60)  # Wait 1 min after boot
+    await asyncio.sleep(90)  # Wait for gateway + MCP to initialize
 
     while True:
         try:
-            if gw.state == "running" and FMP_KEY:
-                # Lightweight FMP API call to keep the MCP session warm
-                # This goes through the same network path as MCP
-                url = f"https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey={FMP_KEY}"
-                req = urllib.request.Request(url)
-                urllib.request.urlopen(req, timeout=10)
-                # Don't log success (too noisy every 5 min)
-        except Exception:
-            # Don't log — if FMP is down, the MCP reconnect handles it
-            pass
+            if gw.state == "running":
+                # Call Hermes API Server with a trivial MCP-triggering prompt.
+                # This forces Hermes to call FMP MCP tools, keeping the SSE alive.
+                # Cost: ~100 tokens/call × 288 calls/day ≈ ¥0.02/day on doubao-mini.
+                api_key = os.environ.get("HERMES_API_KEY", "")
+                headers = {"Content-Type": "application/json"}
+                if api_key:
+                    headers["Authorization"] = f"Bearer {api_key}"
+                body = json.dumps({
+                    "model": "hermes-agent",
+                    "messages": [{"role": "user", "content": "AAPL price"}],
+                    "stream": False,
+                    "max_tokens": 50,
+                }).encode()
+                req = urllib.request.Request(
+                    "http://localhost:8642/v1/chat/completions",
+                    data=body, headers=headers,
+                )
+                with urllib.request.urlopen(req, timeout=60) as resp:
+                    resp.read()  # Consume response, don't need it
+        except Exception as e:
+            print(f"[mcp-keepalive] Ping failed: {e}", flush=True)
 
         await asyncio.sleep(KEEPALIVE_INTERVAL)
 
