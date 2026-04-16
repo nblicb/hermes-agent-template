@@ -304,7 +304,7 @@ cfg_lock = asyncio.Lock()
 async def mcp_health_monitor():
     """Every hour, check if MCP is dead (by scanning recent logs for errors).
     If dead, auto-restart gateway. Also do a daily restart at UTC 21:00."""
-    MCP_CHECK_INTERVAL = 3600  # 1 hour
+    MCP_CHECK_INTERVAL = 900  # 1 hour
     DAILY_RESTART_HOUR_UTC = 21  # 9 PM UTC = 5 PM ET (after market close)
     _last_daily_restart_date = None
 
