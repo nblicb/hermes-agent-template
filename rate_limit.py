@@ -227,18 +227,57 @@ def _apply_memory_isolation_patch():
 
 
 def _apply_mcp_resilience_patch():
-    """Increase MCP reconnect retries from 5 to 50.
+    """Increase MCP reconnect retries + add session lifecycle logging.
 
-    After 5 retries Hermes gives up and session becomes permanently dead.
-    With 50 retries + exponential backoff (max 60s), recovery window is ~25 min,
-    covering most FMP transient outages. Keep-alive in server.py prevents
-    idle disconnects so this mainly covers FMP restarts/deployments.
+    1. _MAX_RECONNECT_RETRIES 5 → 50 (~25 min recovery window)
+    2. Patch MCP server's run() to log session connect/disconnect times
+       for collecting FMP TTL data.
     """
     try:
         import tools.mcp_tool as mcp_module
+
+        # Increase retry limit
         old_val = getattr(mcp_module, '_MAX_RECONNECT_RETRIES', 5)
         mcp_module._MAX_RECONNECT_RETRIES = 50
         print(f"[MCP PATCH] _MAX_RECONNECT_RETRIES: {old_val} → 50", flush=True)
+
+        # Patch _run_http to log session lifecycle
+        _McpServer = getattr(mcp_module, 'McpServer', None) or getattr(mcp_module, '_McpServer', None)
+        if _McpServer and hasattr(_McpServer, '_run_http'):
+            _orig_run_http = _McpServer._run_http
+
+            async def _patched_run_http(self, config):
+                import time as _time
+                _start = _time.time()
+                _name = getattr(self, 'name', 'unknown')
+                print(f"[MCP SESSION] {_name}: connecting...", flush=True)
+                try:
+                    await _orig_run_http(self, config)
+                finally:
+                    _elapsed = _time.time() - _start
+                    _mins = int(_elapsed // 60)
+                    print(f"[MCP SESSION] {_name}: disconnected after {_mins}m {int(_elapsed % 60)}s", flush=True)
+
+            _McpServer._run_http = _patched_run_http
+            print("[MCP PATCH] Session lifecycle logging enabled", flush=True)
+        else:
+            # Try alternative class name
+            for attr_name in dir(mcp_module):
+                cls = getattr(mcp_module, attr_name, None)
+                if isinstance(cls, type) and hasattr(cls, '_run_http') and attr_name != 'McpServer':
+                    _orig = cls._run_http
+                    async def _wrap(self, config, _orig=_orig):
+                        import time as _t
+                        _s = _t.time()
+                        print(f"[MCP SESSION] {getattr(self,'name','?')}: connecting...", flush=True)
+                        try:
+                            await _orig(self, config)
+                        finally:
+                            print(f"[MCP SESSION] {getattr(self,'name','?')}: disconnected after {int((_t.time()-_s)//60)}m", flush=True)
+                    cls._run_http = _wrap
+                    print(f"[MCP PATCH] Session logging on {attr_name}", flush=True)
+                    break
+
     except Exception as e:
         print(f"[MCP PATCH] Failed: {e}", flush=True)
 
