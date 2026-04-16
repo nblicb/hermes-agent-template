@@ -299,6 +299,46 @@ gw = Gateway()
 cfg_lock = asyncio.Lock()
 
 
+# ── MCP health monitor + daily restart ────────────────────────────────────────
+
+async def mcp_health_monitor():
+    """Every hour, check if MCP is dead (by scanning recent logs for errors).
+    If dead, auto-restart gateway. Also do a daily restart at UTC 21:00."""
+    MCP_CHECK_INTERVAL = 3600  # 1 hour
+    DAILY_RESTART_HOUR_UTC = 21  # 9 PM UTC = 5 PM ET (after market close)
+    _last_daily_restart_date = None
+
+    await asyncio.sleep(120)  # Wait 2 min after boot before first check
+
+    while True:
+        try:
+            now = time.gmtime()
+            today = f"{now.tm_year}-{now.tm_mon:02d}-{now.tm_mday:02d}"
+
+            # Daily scheduled restart (once per day at DAILY_RESTART_HOUR_UTC)
+            if now.tm_hour == DAILY_RESTART_HOUR_UTC and _last_daily_restart_date != today:
+                _last_daily_restart_date = today
+                if gw.state == "running":
+                    print("[health] Daily scheduled gateway restart", flush=True)
+                    await gw.restart()
+                    await asyncio.sleep(30)  # Wait after restart
+                    continue
+
+            # MCP health check: scan recent logs for "Session terminated" errors
+            if gw.state == "running":
+                recent_logs = list(gw.logs)[-50:]  # Last 50 log lines
+                mcp_errors = sum(1 for l in recent_logs if "Session terminated" in l)
+                if mcp_errors >= 3:
+                    print(f"[health] MCP unhealthy ({mcp_errors} session errors), auto-restarting gateway", flush=True)
+                    await gw.restart()
+                    await asyncio.sleep(30)
+
+        except Exception as e:
+            print(f"[health] Monitor error: {e}", flush=True)
+
+        await asyncio.sleep(MCP_CHECK_INTERVAL)
+
+
 # ── Route handlers ────────────────────────────────────────────────────────────
 async def page_index(request: Request):
     if err := guard(request): return err
@@ -542,6 +582,7 @@ async def auto_start():
 @asynccontextmanager
 async def lifespan(app):
     await auto_start()
+    asyncio.create_task(mcp_health_monitor())
     yield
     await gw.stop()
 
