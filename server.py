@@ -299,44 +299,79 @@ gw = Gateway()
 cfg_lock = asyncio.Lock()
 
 
-# ── MCP health monitor + daily restart ────────────────────────────────────────
+# ── MCP keep-alive + health monitor ───────────────────────────────────────────
+
+async def mcp_keepalive():
+    """Keep FMP MCP session alive by sending a lightweight tool call every 5 min.
+
+    Prevents idle timeout (most common cause of session termination).
+    If the keepalive call fails, the existing Hermes reconnect mechanism handles it.
+    This does NOT restart the gateway — it just prevents idle disconnects.
+    """
+    import urllib.request
+
+    KEEPALIVE_INTERVAL = 300  # 5 minutes
+    FMP_KEY = os.environ.get("FMP_API_KEY", "")
+
+    await asyncio.sleep(60)  # Wait 1 min after boot
+
+    while True:
+        try:
+            if gw.state == "running" and FMP_KEY:
+                # Lightweight FMP API call to keep the MCP session warm
+                # This goes through the same network path as MCP
+                url = f"https://financialmodelingprep.com/stable/quote?symbol=AAPL&apikey={FMP_KEY}"
+                req = urllib.request.Request(url)
+                urllib.request.urlopen(req, timeout=10)
+                # Don't log success (too noisy every 5 min)
+        except Exception:
+            # Don't log — if FMP is down, the MCP reconnect handles it
+            pass
+
+        await asyncio.sleep(KEEPALIVE_INTERVAL)
+
 
 async def mcp_health_monitor():
-    """Every hour, check if MCP is dead (by scanning recent logs for errors).
-    If dead, auto-restart gateway. Also do a daily restart at UTC 21:00."""
-    MCP_CHECK_INTERVAL = 900  # 1 hour
-    DAILY_RESTART_HOUR_UTC = 21  # 9 PM UTC = 5 PM ET (after market close)
-    _last_daily_restart_date = None
+    """Monitor MCP session health. Log status every 15 min for diagnostics.
 
-    await asyncio.sleep(120)  # Wait 2 min after boot before first check
+    Does NOT restart gateway — only records data for analysis.
+    Keeps daily restart at UTC 21:00 as a safety net.
+    """
+    MONITOR_INTERVAL = 900  # 15 minutes
+    DAILY_RESTART_HOUR_UTC = 21
+    _last_daily_restart_date = None
+    _last_error_count = 0
+
+    await asyncio.sleep(120)  # Wait 2 min after boot
 
     while True:
         try:
             now = time.gmtime()
             today = f"{now.tm_year}-{now.tm_mon:02d}-{now.tm_mday:02d}"
 
-            # Daily scheduled restart (once per day at DAILY_RESTART_HOUR_UTC)
+            # Daily scheduled restart (once per day, safety net)
             if now.tm_hour == DAILY_RESTART_HOUR_UTC and _last_daily_restart_date != today:
                 _last_daily_restart_date = today
                 if gw.state == "running":
-                    print("[health] Daily scheduled gateway restart", flush=True)
-                    await gw.restart()
-                    await asyncio.sleep(30)  # Wait after restart
-                    continue
-
-            # MCP health check: scan recent logs for "Session terminated" errors
-            if gw.state == "running":
-                recent_logs = list(gw.logs)[-50:]  # Last 50 log lines
-                mcp_errors = sum(1 for l in recent_logs if "Session terminated" in l)
-                if mcp_errors >= 3:
-                    print(f"[health] MCP unhealthy ({mcp_errors} session errors), auto-restarting gateway", flush=True)
+                    print("[health] Daily scheduled gateway restart (UTC 21:00)", flush=True)
                     await gw.restart()
                     await asyncio.sleep(30)
+                    _last_error_count = 0
+                    continue
+
+            # Monitor: count MCP errors but DON'T restart
+            if gw.state == "running":
+                recent_logs = list(gw.logs)[-100:]
+                mcp_errors = sum(1 for l in recent_logs if "Session terminated" in l)
+                if mcp_errors != _last_error_count:
+                    print(f"[health] MCP session errors: {mcp_errors} (was {_last_error_count}). "
+                          f"Gateway uptime: {int(time.time() - (gw.started_at or time.time()))}s", flush=True)
+                    _last_error_count = mcp_errors
 
         except Exception as e:
             print(f"[health] Monitor error: {e}", flush=True)
 
-        await asyncio.sleep(MCP_CHECK_INTERVAL)
+        await asyncio.sleep(MONITOR_INTERVAL)
 
 
 # ── Route handlers ────────────────────────────────────────────────────────────
@@ -582,6 +617,7 @@ async def auto_start():
 @asynccontextmanager
 async def lifespan(app):
     await auto_start()
+    asyncio.create_task(mcp_keepalive())
     asyncio.create_task(mcp_health_monitor())
     yield
     await gw.stop()

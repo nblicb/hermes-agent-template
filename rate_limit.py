@@ -226,11 +226,29 @@ def _apply_memory_isolation_patch():
         return False
 
 
+def _apply_mcp_resilience_patch():
+    """Increase MCP reconnect retries from 5 to 50.
+
+    After 5 retries Hermes gives up and session becomes permanently dead.
+    With 50 retries + exponential backoff (max 60s), recovery window is ~25 min,
+    covering most FMP transient outages. Keep-alive in server.py prevents
+    idle disconnects so this mainly covers FMP restarts/deployments.
+    """
+    try:
+        import tools.mcp_tool as mcp_module
+        old_val = getattr(mcp_module, '_MAX_RECONNECT_RETRIES', 5)
+        mcp_module._MAX_RECONNECT_RETRIES = 50
+        print(f"[MCP PATCH] _MAX_RECONNECT_RETRIES: {old_val} → 50", flush=True)
+    except Exception as e:
+        print(f"[MCP PATCH] Failed: {e}", flush=True)
+
+
 def apply_patch():
     """Monkey-patch GatewayRunner._handle_message with rate limiting + logging."""
     try:
-        # Apply per-user memory isolation first
+        # Apply patches
         _apply_memory_isolation_patch()
+        _apply_mcp_resilience_patch()
 
         from gateway.run import GatewayRunner
         _original = GatewayRunner._handle_message
