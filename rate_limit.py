@@ -283,24 +283,42 @@ def _apply_mcp_resilience_patch():
 
 
 def _apply_home_channel_suppress():
-    """Suppress the 'No home channel is set for X' first-message prompt.
+    """Suppress the 'No home channel is set for X' first-message nag.
 
-    Hermes gateway/run.py (`_handle_message_with_agent`) shows the nag when
-    `{PLATFORM}_HOME_CHANNEL` env var is unset. InvestLog does not use Hermes
-    cron/cross-platform delivery, so the prompt is pure noise to users.
+    The nag lives inline inside GatewayRunner._handle_message_with_agent
+    (gateway/run.py ~line 3451): `if not os.getenv(env_key)` where env_key
+    is f"{PLATFORM}_HOME_CHANNEL". There is no helper function to patch.
 
-    Set env vars to a sentinel so `if not os.getenv(env_key)` always evaluates
-    False — same-layer patch as _MAX_RECONNECT_RETRIES (module-level state flip,
-    not function body rewrite). Survives Hermes upstream upgrades.
+    Why not set the env var: TELEGRAM_HOME_CHANNEL is a functional chat_id,
+    not a toggle. gateway/config.py:733 reads it to build a HomeChannel
+    object; cron/scheduler.py:95 reads it as a fallback delivery target.
+    Setting it to a sentinel pollutes both.
 
-    Does NOT affect users who set home channel via /sethome (that writes to
-    config.yaml, separate mechanism).
+    Approach: replace `gateway.run.os` with a shim that intercepts ONLY
+    `*_HOME_CHANNEL` getenv lookups and returns a non-empty string when the
+    real env is unset. Module-scoped — gateway.config and cron.scheduler each
+    do their own `import os` so they are unaffected and still see the unset
+    env. /sethome uses os.environ.__setitem__ (not getenv) so it is also
+    unaffected.
     """
-    for platform in ("TELEGRAM", "DISCORD", "SLACK", "MATTERMOST", "SIGNAL"):
-        key = f"{platform}_HOME_CHANNEL"
-        if not os.environ.get(key):
-            os.environ[key] = "disabled"
-            print(f"[HOME CHANNEL PATCH] Suppressed first-message nag for {platform}", flush=True)
+    try:
+        import os as _real_os
+        from gateway import run as gateway_run
+
+        class _HomeChannelOSShim:
+            def __getattr__(self, name):
+                return getattr(_real_os, name)
+
+            def getenv(self, key, default=None):
+                if isinstance(key, str) and key.endswith("_HOME_CHANNEL"):
+                    real = _real_os.getenv(key, default)
+                    return real if real else "__nag_suppressed__"
+                return _real_os.getenv(key, default)
+
+        gateway_run.os = _HomeChannelOSShim()
+        print("[HOME CHANNEL PATCH] gateway.run.os shim installed (nag suppressed)", flush=True)
+    except Exception as e:
+        print(f"[HOME CHANNEL PATCH] FAILED: {e}", flush=True)
 
 
 def apply_patch():
