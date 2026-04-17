@@ -35,7 +35,7 @@ Rejected approaches (do not re-propose):
 - adapter.send text-match for nag: fragile to copy changes, wrong layer,
   didn't verify /sethome. Function-level patch instead.
 - self._pending_user_id singleton attr for Fix 1: race across concurrent
-  requests — ApiServerPlatform is singleton, async tasks interleave at awaits.
+  requests — APIServerAdapter is singleton, async tasks interleave at awaits.
 - Pure ContextVar + copy_context().run spanning async→executor: works but
   adds PEP-567 cognitive load. Prefer: read on async side, capture in
   closure, thread explicit kwarg through executor boundary.
@@ -377,11 +377,11 @@ def _apply_api_server_user_id_patch():
     cannot cross-contaminate.
     """
     try:
-        from gateway.platforms.api_server import ApiServerPlatform
+        from gateway.platforms.api_server import APIServerAdapter
         import asyncio
 
         # Patch 1: wrap _handle_chat_completions — read header → set ContextVar
-        _orig_handle = ApiServerPlatform._handle_chat_completions
+        _orig_handle = APIServerAdapter._handle_chat_completions
 
         async def _patched_handle_chat_completions(self, request):
             user_id = (request.headers.get("X-Hermes-User-Id", "") or "").strip() or None
@@ -391,7 +391,7 @@ def _apply_api_server_user_id_patch():
             finally:
                 _hermes_user_id_var.reset(token)
 
-        ApiServerPlatform._handle_chat_completions = _patched_handle_chat_completions
+        APIServerAdapter._handle_chat_completions = _patched_handle_chat_completions
 
         # Patch 2: replace _run_agent — read ContextVar on async side, pass via closure
         async def _patched_run_agent(
@@ -431,7 +431,7 @@ def _apply_api_server_user_id_patch():
 
             return await loop.run_in_executor(None, _run)
 
-        ApiServerPlatform._run_agent = _patched_run_agent
+        APIServerAdapter._run_agent = _patched_run_agent
 
         # Patch 3: replace _create_agent — accept user_id kwarg, pass to AIAgent
         def _patched_create_agent(
@@ -475,7 +475,7 @@ def _apply_api_server_user_id_patch():
                 user_id=user_id,
             )
 
-        ApiServerPlatform._create_agent = _patched_create_agent
+        APIServerAdapter._create_agent = _patched_create_agent
 
         print("[API SERVER USER_ID PATCH] installed (X-Hermes-User-Id → AIAgent.user_id)", flush=True)
     except Exception as e:
