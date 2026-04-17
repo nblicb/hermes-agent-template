@@ -1,18 +1,53 @@
 """
-Rate limiting + usage logging monkey-patch for Hermes gateway.
+Hermes gateway monkey-patches (applied at startup via apply_patch()).
 
-Patches GatewayRunner._handle_message to:
-1. Rate limit (cooldown, ban, quota, input length)
-2. Log every query to PostgreSQL il_chat_usage table (same as web-app)
+All patches live in this module to keep a single upgrade-review surface.
 
-Import this module before starting the gateway to activate the patch.
-If patching fails, falls back silently (no rate limiting, no logging).
+Active patches:
+1. Rate limit + usage logging (GatewayRunner._handle_message wrapper)
+   Cooldown / ban / daily quota / input-length + writes il_chat_usage.
+2. Slash-command interceptor (inside #1)
+   commands.dispatch_command short-circuits /watch /alert /usage /pro /notify.
+3. Volcengine ASR (GatewayRunner._enrich_message_with_transcription wrapper)
+   Replaces built-in STT when VOLCENGINE_ASR_APP_ID+TOKEN are set.
+4. Memory isolation (_apply_memory_isolation_patch)
+   Per-user /data/.hermes/memories/user_{uid}/; fail-safe disables memory
+   when no user_id. Source: tools/memory_tool.py, run_agent.py:626.
+   Based on: hermes-agent@58b6b5e (2026-04-12)
+5. MCP resilience (_apply_mcp_resilience_patch)
+   _MAX_RECONNECT_RETRIES 5 → 50; logs MCP session connect/disconnect.
+   Source: tools/mcp_tool.py.
+   Based on: hermes-agent@58b6b5e (2026-04-12)
+6. Home-channel nag suppression (_apply_home_channel_suppress)
+   gateway.run.os → shim intercepting *_HOME_CHANNEL getenv only.
+   Module-scoped so gateway.config + cron.scheduler see unset env.
+   Source: gateway/run.py:3451.
+   Based on: hermes-agent@58b6b5e (2026-04-12)
+7. API-server user_id propagation (_apply_api_server_user_id_patch)
+   X-Hermes-User-Id header → ContextVar (bridge) → _run_agent reads on
+   async side → closure → _create_agent → AIAgent(user_id=).
+   Source: gateway/platforms/api_server.py:451, :529, :1410.
+   Based on: hermes-agent@58b6b5e (2026-04-12)
+
+Rejected approaches (do not re-propose):
+- TELEGRAM_HOME_CHANNEL="disabled" sentinel: pollutes config.py:733
+  (HomeChannel chat_id) + cron/scheduler.py:95 (fallback target).
+- adapter.send text-match for nag: fragile to copy changes, wrong layer,
+  didn't verify /sethome. Function-level patch instead.
+- self._pending_user_id singleton attr for Fix 1: race across concurrent
+  requests — ApiServerPlatform is singleton, async tasks interleave at awaits.
+- Pure ContextVar + copy_context().run spanning async→executor: works but
+  adds PEP-567 cognitive load. Prefer: read on async side, capture in
+  closure, thread explicit kwarg through executor boundary.
+
+Import this module before starting the gateway. Failures fall back silently.
 """
 
 import os
 import time
 import logging
 import datetime
+import contextvars
 from collections import deque
 
 logger = logging.getLogger("rate_limit")
@@ -35,6 +70,13 @@ _daily_count: dict[tuple[str, str], int] = {}
 
 # ── DB connection for usage logging ────────────────────────────
 _db_conn = None
+
+# ── User-ID propagation for API server (Fix 1) ──────────────────
+# Bridges X-Hermes-User-Id header → _run_agent → _create_agent → AIAgent.
+# ContextVar used only on async side; executor receives user_id via closure.
+_hermes_user_id_var: contextvars.ContextVar = contextvars.ContextVar(
+    "hermes_user_id", default=None
+)
 
 def _get_db():
     global _db_conn
@@ -321,6 +363,125 @@ def _apply_home_channel_suppress():
         print(f"[HOME CHANNEL PATCH] FAILED: {e}", flush=True)
 
 
+def _apply_api_server_user_id_patch():
+    """Propagate X-Hermes-User-Id header → AIAgent.user_id.
+
+    Chain: _handle_chat_completions (wrap) → ContextVar → _run_agent (replace,
+    reads ContextVar on async side) → _create_agent (replace, accepts user_id
+    kwarg) → AIAgent(user_id=...).
+
+    ContextVar is a bridge across only the _handle_chat_completions →
+    _run_agent hop (handler is 220 lines, not replaced wholesale). From
+    _run_agent downward, user_id is an explicit kwarg. Each aiohttp request
+    runs in its own asyncio.Task with its own Context, so concurrent requests
+    cannot cross-contaminate.
+    """
+    try:
+        from gateway.platforms.api_server import ApiServerPlatform
+        import asyncio
+
+        # Patch 1: wrap _handle_chat_completions — read header → set ContextVar
+        _orig_handle = ApiServerPlatform._handle_chat_completions
+
+        async def _patched_handle_chat_completions(self, request):
+            user_id = (request.headers.get("X-Hermes-User-Id", "") or "").strip() or None
+            token = _hermes_user_id_var.set(user_id)
+            try:
+                return await _orig_handle(self, request)
+            finally:
+                _hermes_user_id_var.reset(token)
+
+        ApiServerPlatform._handle_chat_completions = _patched_handle_chat_completions
+
+        # Patch 2: replace _run_agent — read ContextVar on async side, pass via closure
+        async def _patched_run_agent(
+            self,
+            user_message,
+            conversation_history,
+            ephemeral_system_prompt=None,
+            session_id=None,
+            stream_delta_callback=None,
+            tool_progress_callback=None,
+            agent_ref=None,
+        ):
+            loop = asyncio.get_event_loop()
+            user_id = _hermes_user_id_var.get()
+
+            def _run():
+                agent = self._create_agent(
+                    ephemeral_system_prompt=ephemeral_system_prompt,
+                    session_id=session_id,
+                    stream_delta_callback=stream_delta_callback,
+                    tool_progress_callback=tool_progress_callback,
+                    user_id=user_id,
+                )
+                if agent_ref is not None:
+                    agent_ref[0] = agent
+                result = agent.run_conversation(
+                    user_message=user_message,
+                    conversation_history=conversation_history,
+                    task_id="default",
+                )
+                usage = {
+                    "input_tokens": getattr(agent, "session_prompt_tokens", 0) or 0,
+                    "output_tokens": getattr(agent, "session_completion_tokens", 0) or 0,
+                    "total_tokens": getattr(agent, "session_total_tokens", 0) or 0,
+                }
+                return result, usage
+
+            return await loop.run_in_executor(None, _run)
+
+        ApiServerPlatform._run_agent = _patched_run_agent
+
+        # Patch 3: replace _create_agent — accept user_id kwarg, pass to AIAgent
+        def _patched_create_agent(
+            self,
+            ephemeral_system_prompt=None,
+            session_id=None,
+            stream_delta_callback=None,
+            tool_progress_callback=None,
+            user_id=None,
+        ):
+            from run_agent import AIAgent
+            from gateway.run import (
+                _resolve_runtime_agent_kwargs,
+                _resolve_gateway_model,
+                _load_gateway_config,
+                GatewayRunner,
+            )
+            from hermes_cli.tools_config import _get_platform_tools
+
+            runtime_kwargs = _resolve_runtime_agent_kwargs()
+            model = _resolve_gateway_model()
+            user_config = _load_gateway_config()
+            enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
+            max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "90"))
+            fallback_model = GatewayRunner._load_fallback_model()
+
+            return AIAgent(
+                model=model,
+                **runtime_kwargs,
+                max_iterations=max_iterations,
+                quiet_mode=True,
+                verbose_logging=False,
+                ephemeral_system_prompt=ephemeral_system_prompt or None,
+                enabled_toolsets=enabled_toolsets,
+                session_id=session_id,
+                platform="api_server",
+                stream_delta_callback=stream_delta_callback,
+                tool_progress_callback=tool_progress_callback,
+                session_db=self._ensure_session_db(),
+                fallback_model=fallback_model,
+                user_id=user_id,
+            )
+
+        ApiServerPlatform._create_agent = _patched_create_agent
+
+        print("[API SERVER USER_ID PATCH] installed (X-Hermes-User-Id → AIAgent.user_id)", flush=True)
+    except Exception as e:
+        print(f"[API SERVER USER_ID PATCH] FAILED: {e}", flush=True)
+
+
 def apply_patch():
     """Monkey-patch GatewayRunner._handle_message with rate limiting + logging."""
     try:
@@ -328,6 +489,7 @@ def apply_patch():
         _apply_memory_isolation_patch()
         _apply_mcp_resilience_patch()
         _apply_home_channel_suppress()
+        _apply_api_server_user_id_patch()
 
         from gateway.run import GatewayRunner
         _original = GatewayRunner._handle_message
