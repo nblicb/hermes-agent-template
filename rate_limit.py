@@ -282,12 +282,34 @@ def _apply_mcp_resilience_patch():
         print(f"[MCP PATCH] Failed: {e}", flush=True)
 
 
+def _apply_home_channel_suppress():
+    """Suppress the 'No home channel is set for X' first-message prompt.
+
+    Hermes gateway/run.py (`_handle_message_with_agent`) shows the nag when
+    `{PLATFORM}_HOME_CHANNEL` env var is unset. InvestLog does not use Hermes
+    cron/cross-platform delivery, so the prompt is pure noise to users.
+
+    Set env vars to a sentinel so `if not os.getenv(env_key)` always evaluates
+    False — same-layer patch as _MAX_RECONNECT_RETRIES (module-level state flip,
+    not function body rewrite). Survives Hermes upstream upgrades.
+
+    Does NOT affect users who set home channel via /sethome (that writes to
+    config.yaml, separate mechanism).
+    """
+    for platform in ("TELEGRAM", "DISCORD", "SLACK", "MATTERMOST", "SIGNAL"):
+        key = f"{platform}_HOME_CHANNEL"
+        if not os.environ.get(key):
+            os.environ[key] = "disabled"
+            print(f"[HOME CHANNEL PATCH] Suppressed first-message nag for {platform}", flush=True)
+
+
 def apply_patch():
     """Monkey-patch GatewayRunner._handle_message with rate limiting + logging."""
     try:
         # Apply patches
         _apply_memory_isolation_patch()
         _apply_mcp_resilience_patch()
+        _apply_home_channel_suppress()
 
         from gateway.run import GatewayRunner
         _original = GatewayRunner._handle_message
