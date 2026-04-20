@@ -45,8 +45,41 @@ def _get_db():
         return None
 
 
-def _is_chinese(text: str) -> bool:
+def _is_chinese(text: str, user_id: str = None) -> bool:
+    """Detect zh. Reads telegram_notify_settings.lang first, falls back to char scan."""
+    if user_id:
+        conn = _get_db()
+        if conn:
+            try:
+                cur = conn.cursor()
+                cur.execute(
+                    "SELECT lang FROM telegram_notify_settings WHERE tg_user_id = %s",
+                    (int(user_id),)
+                )
+                row = cur.fetchone()
+                if row and row[0]:
+                    return row[0] == "zh"
+            except Exception:
+                pass
     return any('\u4e00' <= c <= '\u9fff' for c in text)
+
+
+def _remember_lang(user_id: str, text: str) -> None:
+    """Persist lang='zh' once we see a Chinese message. Never overwrites back to 'en'."""
+    if not any('\u4e00' <= c <= '\u9fff' for c in text):
+        return
+    conn = _get_db()
+    if not conn:
+        return
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO telegram_notify_settings (tg_user_id, lang) VALUES (%s, 'zh') "
+            "ON CONFLICT (tg_user_id) DO UPDATE SET lang = 'zh'",
+            (int(user_id),)
+        )
+    except Exception:
+        pass
 
 
 # ── Tier / Quota ───────────────────────────────────────────────
@@ -78,7 +111,7 @@ def _get_tier(user_id: str) -> str:
 
 # ── /help /start ───────────────────────────────────────────────
 def handle_help(user_id: str, msg: str) -> str:
-    zh = _is_chinese(msg)
+    zh = _is_chinese(msg, user_id)
     if zh:
         return (
             "📋 *InvestLog AI 命令*\n\n"
@@ -114,7 +147,7 @@ def handle_help(user_id: str, msg: str) -> str:
 
 # ── /watch ─────────────────────────────────────────────────────
 def handle_watch(user_id: str, msg: str) -> str:
-    zh = _is_chinese(msg)
+    zh = _is_chinese(msg, user_id)
     parts = msg.strip().split()
     # /watch or /watch with no args
     if len(parts) <= 1:
@@ -152,15 +185,40 @@ def handle_watch(user_id: str, msg: str) -> str:
         return f"⚠️ {symbol} {'不在自选股中' if zh else 'not in watchlist'}"
 
     elif sub == "list":
-        cur.execute("SELECT symbol FROM tg_watchlist WHERE tg_user_id = %s ORDER BY added_at", (uid,))
+        cur.execute(
+            """
+            SELECT w.symbol,
+                   q.price,
+                   COALESCE(q.change_percent,
+                       CASE WHEN q.previous_close > 0
+                            THEN ((q.price - q.previous_close) / q.previous_close * 100)
+                            ELSE 0 END,
+                       0)::float AS chg
+            FROM tg_watchlist w
+            LEFT JOIN LATERAL (
+                SELECT price, change_percent, previous_close
+                FROM quote_snapshot
+                WHERE symbol = w.symbol AND volume IS NOT NULL
+                ORDER BY snap_date DESC LIMIT 1
+            ) q ON true
+            WHERE w.tg_user_id = %s
+            ORDER BY w.added_at
+            """,
+            (uid,)
+        )
         rows = cur.fetchall()
         if not rows:
             return f"📋 {'自选股为空' if zh else 'Watchlist empty'}\n\n/watch add AAPL"
-        cur.execute("SELECT COUNT(*) FROM tg_watchlist WHERE tg_user_id = %s", (uid,))
-        count = cur.fetchone()[0]
-        symbols = ", ".join(r[0] for r in rows)
+        count = len(rows)
+        lines = []
+        for symbol, price, chg in rows:
+            if price is None:
+                lines.append(f"⚪ {symbol}  —")
+                continue
+            emoji = "🟢" if chg > 0 else "🔴" if chg < 0 else "⚪"
+            lines.append(f"{emoji} {symbol}  ${float(price):.2f}  {chg:+.2f}%")
         header = f"📋 {'自选股' if zh else 'Watchlist'} ({count}/{limit})"
-        return f"{header}\n\n{symbols}"
+        return f"{header}\n\n" + "\n".join(lines)
 
     elif sub == "clear":
         cur.execute("DELETE FROM tg_watchlist WHERE tg_user_id = %s", (uid,))
@@ -178,7 +236,7 @@ _RE_PCT = re.compile(r"^([A-Za-z0-9.\-^]+)\s*([+-])(\d+(?:\.\d+)?)%$")
 
 
 def handle_alert(user_id: str, msg: str) -> str:
-    zh = _is_chinese(msg)
+    zh = _is_chinese(msg, user_id)
     raw = msg.strip()
     after = raw.split(None, 1)[1] if " " in raw else ""
     after = after.strip()
@@ -200,32 +258,74 @@ def handle_alert(user_id: str, msg: str) -> str:
     lower = after.lower()
     if lower == "list":
         cur.execute(
-            "SELECT id, symbol, condition_type, target_value FROM tg_price_alerts WHERE tg_user_id = %s AND is_active = true ORDER BY created_at",
+            """
+            SELECT a.id, a.symbol, a.condition_type, a.target_value,
+                   q.price,
+                   COALESCE(q.change_percent,
+                       CASE WHEN q.previous_close > 0
+                            THEN ((q.price - q.previous_close) / q.previous_close * 100)
+                            ELSE 0 END,
+                       0)::float AS chg
+            FROM tg_price_alerts a
+            LEFT JOIN LATERAL (
+                SELECT price, change_percent, previous_close
+                FROM quote_snapshot
+                WHERE symbol = a.symbol AND volume IS NOT NULL
+                ORDER BY snap_date DESC LIMIT 1
+            ) q ON true
+            WHERE a.tg_user_id = %s AND a.is_active = true
+            ORDER BY a.created_at
+            """,
             (uid,)
         )
         rows = cur.fetchall()
         if not rows:
             return f"📋 {'暂无监控' if zh else 'No active alerts'}\n\n/alert AAPL > 200"
         lines = []
-        for r in rows:
-            cond = {"price_above": ">", "price_below": "<", "change_pct_up": "+%", "change_pct_down": "-%"}.get(r[2], "?")
-            if "pct" in r[2]:
-                lines.append(f"#{r[0]} {r[1]} {'+' if 'up' in r[2] else '-'}{r[3]:g}%")
+        for i, (_id, symbol, ctype, target, price, chg) in enumerate(rows, 1):
+            target = float(target)
+            p = float(price) if price is not None else None
+            if ctype == "price_above":
+                cond_str = f"> ${target:g}"
+                dist = f"  ({((target-p)/p*100):+.1f}%)" if p else ""
+                line = f"#{i}  {symbol}  {cond_str}{dist}"
+            elif ctype == "price_below":
+                cond_str = f"< ${target:g}"
+                dist = f"  ({((target-p)/p*100):+.1f}%)" if p else ""
+                line = f"#{i}  {symbol}  {cond_str}{dist}"
+            elif ctype == "change_pct_up":
+                now = f"  ({'当前' if zh else 'now'} {chg:+.2f}%)" if p else ""
+                line = f"#{i}  {symbol}  +{target:g}%{now}"
+            elif ctype == "change_pct_down":
+                now = f"  ({'当前' if zh else 'now'} {chg:+.2f}%)" if p else ""
+                line = f"#{i}  {symbol}  -{target:g}%{now}"
             else:
-                lines.append(f"#{r[0]} {r[1]} {cond} ${r[3]:g}")
+                line = f"#{i}  {symbol}  ?"
+            lines.append(line)
         count = len(rows)
         header = f"🔔 {'监控列表' if zh else 'Alerts'} ({count}/{limit})"
-        return f"{header}\n\n" + "\n".join(lines)
+        footer = f"\n\n/alert remove N — {'删除' if zh else 'remove'}"
+        return f"{header}\n\n" + "\n".join(lines) + footer
 
     elif lower.startswith("remove"):
         parts = after.split()
         if len(parts) >= 2 and parts[1].isdigit():
-            alert_id = int(parts[1])
+            n = int(parts[1])
+            if n < 1:
+                return "⚠️ /alert remove N (N >= 1)"
+            cur.execute(
+                "SELECT id, symbol FROM tg_price_alerts WHERE tg_user_id = %s AND is_active = true ORDER BY created_at OFFSET %s LIMIT 1",
+                (uid, n - 1)
+            )
+            row = cur.fetchone()
+            if not row:
+                return f"⚠️ {'未找到监控' if zh else 'Alert not found'} #{n}"
+            alert_id, symbol = row
             cur.execute("DELETE FROM tg_price_alerts WHERE id = %s AND tg_user_id = %s", (alert_id, uid))
             if cur.rowcount:
-                return f"✅ {'已删除监控' if zh else 'Alert removed'} #{alert_id}"
-            return f"⚠️ {'未找到监控' if zh else 'Alert not found'} #{alert_id}"
-        return "⚠️ /alert remove <id>"
+                return f"✅ {'已删除监控' if zh else 'Alert removed'} #{n} {symbol}"
+            return f"⚠️ {'未找到监控' if zh else 'Alert not found'} #{n}"
+        return "⚠️ /alert remove N"
 
     else:
         # Parse condition
@@ -256,7 +356,7 @@ def handle_alert(user_id: str, msg: str) -> str:
 
 # ── /usage ─────────────────────────────────────────────────────
 def handle_usage(user_id: str, msg: str) -> str:
-    zh = _is_chinese(msg)
+    zh = _is_chinese(msg, user_id)
     tier = _get_tier(user_id)
     limit = 999 if tier == "admin" else DAILY_QUOTA.get(tier, 20)
     tier_label = {"admin": "Admin", "pro": "Pro", "free": "Free"}.get(tier, tier)
@@ -290,7 +390,7 @@ def handle_usage(user_id: str, msg: str) -> str:
 
 # ── /pro ───────────────────────────────────────────────────────
 def handle_pro(user_id: str, msg: str) -> str:
-    zh = _is_chinese(msg)
+    zh = _is_chinese(msg, user_id)
     tier = _get_tier(user_id)
 
     # Check if already Pro
@@ -334,7 +434,7 @@ def handle_pro(user_id: str, msg: str) -> str:
 
 # ── /notify /subscribe /unsubscribe ────────────────────────────
 def handle_notify(user_id: str, msg: str) -> str:
-    zh = _is_chinese(msg)
+    zh = _is_chinese(msg, user_id)
     conn = _get_db()
     if not conn:
         return "⚠️ Database unavailable"
@@ -371,7 +471,7 @@ def handle_notify(user_id: str, msg: str) -> str:
 
 
 def handle_subscribe(user_id: str, msg: str, field: str, enable: bool) -> str:
-    zh = _is_chinese(msg)
+    zh = _is_chinese(msg, user_id)
     conn = _get_db()
     if not conn:
         return "⚠️ Database unavailable"
@@ -415,6 +515,8 @@ COMMAND_MAP = {
 def dispatch_command(user_id: str, msg: str) -> str | None:
     """Try to handle a slash command. Returns response text, or None if not a command."""
     text = (msg or "").strip()
+    if user_id and text:
+        _remember_lang(user_id, text)
     if not text.startswith("/"):
         return None
 
