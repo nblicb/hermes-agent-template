@@ -128,37 +128,61 @@ def _record_strike(uid: str):
         logger.warning("User %s auto-banned for 1h after %d strikes", uid, count)
 
 
+def _user_lang(uid: str, message: str = "") -> str:
+    """Return 'zh' or 'en' based on DB preference (authoritative) then char scan."""
+    conn = _get_db()
+    if conn and uid:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT lang FROM telegram_notify_settings WHERE tg_user_id = %s",
+                (int(uid),)
+            )
+            row = cur.fetchone()
+            if row and row[0]:
+                return "zh" if row[0] == "zh" else "en"
+        except Exception:
+            pass
+    if message and any('\u4e00' <= c <= '\u9fff' for c in message):
+        return "zh"
+    return "en"
+
+
 def check_rate_limit(uid: str, message: str) -> str | None:
     """Check all rate limits. Returns error message string, or None if allowed."""
     if uid in ADMIN_IDS:
         return None
 
+    lang = _user_lang(uid, message)
     now = time.monotonic()
 
     # 1. Ban check
     ban_until = _banned_until.get(uid)
     if ban_until:
         if now < ban_until:
-            return "⏱ Too many violations. Try again in 1 hour."
+            return "⏱ 违规过多，请 1 小时后重试。" if lang == "zh" else "⏱ Too many violations. Try again in 1 hour."
         del _banned_until[uid]
         _strike_count.pop(uid, None)
 
     # 2. Input length
     if len(message) > MAX_INPUT:
-        return f"⚠️ Message too long (max {MAX_INPUT} chars)."
+        return (
+            f"⚠️ 消息过长（上限 {MAX_INPUT} 字符）。" if lang == "zh"
+            else f"⚠️ Message too long (max {MAX_INPUT} chars)."
+        )
 
     # 3. Global rate limit
     while _global_ts and _global_ts[0] < now - 60:
         _global_ts.popleft()
     if len(_global_ts) >= GLOBAL_RPM:
-        return "⏱ System busy, please try again shortly."
+        return "⏱ 系统繁忙，请稍后重试。" if lang == "zh" else "⏱ System busy, please try again shortly."
     _global_ts.append(now)
 
     # 4. Per-user cooldown
     last = _user_last.get(uid, 0)
     if now - last < COOLDOWN:
         _record_strike(uid)
-        return "⏱ Please wait before sending another message."
+        return "⏱ 请稍等片刻再发送下一条消息。" if lang == "zh" else "⏱ Please wait before sending another message."
     _user_last[uid] = now
     _strike_count.pop(uid, None)
 
@@ -167,7 +191,10 @@ def check_rate_limit(uid: str, message: str) -> str | None:
     key = (uid, today)
     count = _daily_count.get(key, 0)
     if count >= DAILY_QUOTA:
-        return f"⚠️ Daily limit reached ({DAILY_QUOTA}/day). Try again tomorrow."
+        return (
+            f"⚠️ 今日已达上限（每日 {DAILY_QUOTA} 次），请明天再来。" if lang == "zh"
+            else f"⚠️ Daily limit reached ({DAILY_QUOTA}/day). Try again tomorrow."
+        )
     _daily_count[key] = count + 1
 
     # Cleanup old daily entries
@@ -220,15 +247,19 @@ def _ensure_payment_handlers(adapter):
         async def _on_pre_checkout(update, context):
             from commands import pre_checkout_ok
             q = update.pre_checkout_query
+            uid = str(q.from_user.id) if q.from_user else ""
+            lang = _user_lang(uid, "")
             try:
                 if pre_checkout_ok(q.invoice_payload):
                     await q.answer(ok=True)
                 else:
-                    await q.answer(ok=False, error_message="Invalid subscription plan")
+                    err = "无效的订阅方案" if lang == "zh" else "Invalid subscription plan"
+                    await q.answer(ok=False, error_message=err)
             except Exception as e:
                 logger.error("pre_checkout error: %s", e)
                 try:
-                    await q.answer(ok=False, error_message="Server error")
+                    err = "服务器错误，请重试" if lang == "zh" else "Server error"
+                    await q.answer(ok=False, error_message=err)
                 except Exception:
                     pass
 
@@ -632,8 +663,8 @@ def apply_patch():
             try:
                 chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
                 adapter = self.adapters.get(platform)
-                is_chinese = any('\u4e00' <= c <= '\u9fff' for c in msg)
-                status_text = "🔍 正在查询数据..." if is_chinese else "🔍 Fetching data..."
+                lang = _user_lang(str(uid) if uid else "", msg)
+                status_text = "🔍 正在查询数据..." if lang == "zh" else "🔍 Fetching data..."
                 if adapter and chat_id:
                     sent = await adapter.send(chat_id, status_text)
                     # Try to get message ID for later deletion

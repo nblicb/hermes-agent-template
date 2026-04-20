@@ -18,7 +18,31 @@ import re
 import datetime
 import logging
 
+try:
+    from zoneinfo import ZoneInfo
+    _TZ = ZoneInfo("Asia/Shanghai")
+except Exception:
+    _TZ = None
+
 logger = logging.getLogger("commands")
+
+
+def _now() -> datetime.datetime:
+    """Naive UTC now. DB columns are tz-naive UTC (matches V2 semantics)."""
+    return datetime.datetime.utcnow()
+
+
+def _fmt_date(dt: datetime.datetime) -> str:
+    """Format a naive-UTC datetime as Asia/Shanghai date (YYYY-MM-DD)."""
+    if dt is None:
+        return "—"
+    try:
+        if _TZ is not None:
+            aware = dt.replace(tzinfo=datetime.timezone.utc).astimezone(_TZ)
+            return aware.strftime("%Y-%m-%d")
+    except Exception:
+        pass
+    return (dt + datetime.timedelta(hours=8)).strftime("%Y-%m-%d")
 
 # ── DB helper ──────────────────────────────────────────────────
 _db_conn = None
@@ -102,7 +126,7 @@ def _get_tier(user_id: str) -> str:
             (int(user_id),)
         )
         row = cur.fetchone()
-        if row and row[1] and (row[2] is None or row[2] > datetime.datetime.now()):
+        if row and row[1] and (row[2] is None or row[2] > _now()):
             return row[0] or "free"
     except Exception:
         pass
@@ -312,7 +336,7 @@ def handle_alert(user_id: str, msg: str) -> str:
         if len(parts) >= 2 and parts[1].isdigit():
             n = int(parts[1])
             if n < 1:
-                return "⚠️ /alert remove N (N >= 1)"
+                return "⚠️ /alert remove N（N >= 1）" if zh else "⚠️ /alert remove N (N >= 1)"
             cur.execute(
                 "SELECT id, symbol FROM tg_price_alerts WHERE tg_user_id = %s AND is_active = true ORDER BY created_at OFFSET %s LIMIT 1",
                 (uid, n - 1)
@@ -325,7 +349,7 @@ def handle_alert(user_id: str, msg: str) -> str:
             if cur.rowcount:
                 return f"✅ {'已删除监控' if zh else 'Alert removed'} #{n} {symbol}"
             return f"⚠️ {'未找到监控' if zh else 'Alert not found'} #{n}"
-        return "⚠️ /alert remove N"
+        return "⚠️ /alert remove N" if not zh else "⚠️ 用法：/alert remove N"
 
     else:
         # Parse condition
@@ -407,8 +431,8 @@ def handle_pro(user_id: str, msg: str):
                 (int(user_id),)
             )
             row = cur.fetchone()
-            if row and row[0] and row[0] > datetime.datetime.now():
-                exp = row[0].strftime("%Y-%m-%d")
+            if row and row[0] and row[0] > _now():
+                exp = _fmt_date(row[0])
                 if zh:
                     return f"✅ 你已是 Pro 用户\n有效期至 {exp}"
                 return f"✅ You are already Pro\nValid until {exp}"
@@ -479,7 +503,10 @@ def activate_pro_subscription(
 
     if payload != PRO_PAYLOAD:
         logger.warning("unknown payment payload: %s (user=%s)", payload, user_id)
-        return "⚠️ Unknown payment. Contact admin."
+        return (
+            "⚠️ 未知的支付类型，请联系管理员。" if zh_flag
+            else "⚠️ Unknown payment. Contact admin."
+        )
 
     if not conn:
         return (
@@ -488,7 +515,7 @@ def activate_pro_subscription(
             "✅ Payment received but DB unavailable. Contact admin."
         )
 
-    now = datetime.datetime.now()
+    now = _now()
     expires = now + datetime.timedelta(days=30)
 
     try:
@@ -528,7 +555,7 @@ def activate_pro_subscription(
             (uid,)
         )
 
-        exp_str = expires.strftime("%Y-%m-%d")
+        exp_str = _fmt_date(expires)
         logger.info("Pro activated user=%s expires=%s charge=%s", user_id, exp_str, payment_charge_id)
         if zh_flag:
             return f"✅ Pro 已激活！感谢支持 🎉\n有效期至 {exp_str}"
@@ -638,7 +665,8 @@ def dispatch_command(user_id: str, msg: str) -> str | None:
             return handler(user_id, text)
         except Exception as e:
             logger.error("Command %s failed: %s", cmd, e)
-            return "⚠️ Command error, please try again."
+            zh = _is_chinese(text, user_id)
+            return "⚠️ 命令执行出错，请重试。" if zh else "⚠️ Command error, please try again."
 
     # Subscribe/unsubscribe variants
     if cmd == "/subscribe_earnings":
