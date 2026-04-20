@@ -178,6 +178,87 @@ def check_rate_limit(uid: str, message: str) -> str | None:
     return None
 
 
+# ── Telegram Stars payment: invoice + handlers ──────────────────
+_payment_handlers_registered = False
+
+
+async def _send_invoice(adapter, chat_id, data: dict):
+    """Send promo text + Telegram Stars invoice via the Telegram Bot API."""
+    from telegram import LabeledPrice
+    promo = data.get("promo_text")
+    if promo:
+        try:
+            await adapter.send(chat_id, promo)
+        except Exception as e:
+            logger.debug("promo_text send failed: %s", e)
+    prices = [LabeledPrice(label, amount) for (label, amount) in data["prices"]]
+    await adapter._bot.send_invoice(
+        chat_id=chat_id,
+        title=data["title"],
+        description=data["description"],
+        payload=data["payload"],
+        provider_token="",  # Stars: empty provider_token
+        currency=data.get("currency", "XTR"),
+        prices=prices,
+    )
+
+
+def _ensure_payment_handlers(adapter):
+    """Register pre_checkout + successful_payment handlers on first call."""
+    global _payment_handlers_registered
+    if _payment_handlers_registered:
+        return
+    if not adapter or not hasattr(adapter, "_app") or adapter._app is None:
+        return
+    try:
+        from telegram.ext import (
+            PreCheckoutQueryHandler,
+            MessageHandler,
+            filters,
+        )
+
+        async def _on_pre_checkout(update, context):
+            from commands import pre_checkout_ok
+            q = update.pre_checkout_query
+            try:
+                if pre_checkout_ok(q.invoice_payload):
+                    await q.answer(ok=True)
+                else:
+                    await q.answer(ok=False, error_message="Invalid subscription plan")
+            except Exception as e:
+                logger.error("pre_checkout error: %s", e)
+                try:
+                    await q.answer(ok=False, error_message="Server error")
+                except Exception:
+                    pass
+
+        async def _on_successful_payment(update, context):
+            from commands import activate_pro_subscription
+            msg = update.message
+            pay = msg.successful_payment
+            user_id = str(update.effective_user.id)
+            reply = activate_pro_subscription(
+                user_id,
+                pay.telegram_payment_charge_id or "",
+                pay.provider_payment_charge_id or "",
+                int(pay.total_amount or 0),
+                pay.invoice_payload or "",
+            )
+            try:
+                await msg.reply_text(reply)
+            except Exception as e:
+                logger.error("successful_payment reply failed: %s", e)
+
+        adapter._app.add_handler(PreCheckoutQueryHandler(_on_pre_checkout))
+        adapter._app.add_handler(
+            MessageHandler(filters.SUCCESSFUL_PAYMENT, _on_successful_payment)
+        )
+        _payment_handlers_registered = True
+        logger.info("[PAYMENT] Telegram Stars handlers registered")
+    except Exception as e:
+        logger.error("Failed to register payment handlers: %s", e)
+
+
 def _apply_memory_isolation_patch():
     """Patch MemoryStore + AIAgent to use per-user memory directories.
 
@@ -509,14 +590,25 @@ def apply_patch():
                     from commands import dispatch_command
                     cmd_response = dispatch_command(uid_str, msg)
                     if cmd_response is not None:
-                        _log_usage(uid_str, platform_name, msg, cmd_response[:200], 0, None)
-                        try:
-                            chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
-                            adapter = self.adapters.get(platform)
-                            if adapter and chat_id:
-                                await adapter.send(chat_id, cmd_response)
-                        except Exception as e:
-                            logger.debug("Failed to send command response: %s", e)
+                        chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
+                        adapter = self.adapters.get(platform)
+                        # Lazy-register Telegram payment handlers on first command
+                        _ensure_payment_handlers(adapter)
+                        # Structured action (invoice) vs plain text
+                        if isinstance(cmd_response, dict) and cmd_response.get("type") == "invoice":
+                            _log_usage(uid_str, platform_name, msg, "[invoice]", 0, None)
+                            try:
+                                if adapter and chat_id:
+                                    await _send_invoice(adapter, chat_id, cmd_response)
+                            except Exception as e:
+                                logger.debug("Failed to send invoice: %s", e)
+                        else:
+                            _log_usage(uid_str, platform_name, msg, str(cmd_response)[:200], 0, None)
+                            try:
+                                if adapter and chat_id:
+                                    await adapter.send(chat_id, cmd_response)
+                            except Exception as e:
+                                logger.debug("Failed to send command response: %s", e)
                         return None
                 except Exception as e:
                     logger.debug("Command dispatch error: %s", e)

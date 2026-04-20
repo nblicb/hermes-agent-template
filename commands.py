@@ -389,9 +389,13 @@ def handle_usage(user_id: str, msg: str) -> str:
 
 
 # ── /pro ───────────────────────────────────────────────────────
-def handle_pro(user_id: str, msg: str) -> str:
+PRO_STARS_PRICE = 500
+PRO_PAYLOAD = "sub_pro"
+
+
+def handle_pro(user_id: str, msg: str):
+    """Return status text if already Pro, else invoice dict for Stars checkout."""
     zh = _is_chinese(msg, user_id)
-    tier = _get_tier(user_id)
 
     # Check if already Pro
     conn = _get_db()
@@ -412,24 +416,128 @@ def handle_pro(user_id: str, msg: str) -> str:
             pass
 
     if zh:
-        return (
+        promo = (
             "⭐ *InvestLog Pro*\n\n"
             "升级 Pro 解锁：\n"
             "• 每日 50 次 AI 分析（Free 20 次）\n"
             "• 自选股上限 30 只（Free 10 只）\n"
             "• 价格监控 20 个（Free 5 个）\n\n"
-            "价格：500 Stars/月\n\n"
-            "⚠️ Telegram Stars 支付功能迁移中，敬请期待。"
+            f"价格：{PRO_STARS_PRICE} Stars/月"
         )
-    return (
-        "⭐ *InvestLog Pro*\n\n"
-        "Upgrade to Pro:\n"
-        "• 50 AI analyses/day (Free: 20)\n"
-        "• 30 watchlist slots (Free: 10)\n"
-        "• 20 price alerts (Free: 5)\n\n"
-        "Price: 500 Stars/month\n\n"
-        "⚠️ Telegram Stars payment is being migrated. Coming soon."
-    )
+        title = f"InvestLog Pro — {PRO_STARS_PRICE} Stars/月"
+        desc = "AI 投资助手 Pro 会员，有效期 30 天"
+    else:
+        promo = (
+            "⭐ *InvestLog Pro*\n\n"
+            "Upgrade to Pro:\n"
+            "• 50 AI analyses/day (Free: 20)\n"
+            "• 30 watchlist slots (Free: 10)\n"
+            "• 20 price alerts (Free: 5)\n\n"
+            f"Price: {PRO_STARS_PRICE} Stars/month"
+        )
+        title = f"InvestLog Pro — {PRO_STARS_PRICE} Stars/mo"
+        desc = "AI Investment Assistant Pro, 30-day access"
+
+    return {
+        "type": "invoice",
+        "promo_text": promo,
+        "title": title,
+        "description": desc,
+        "payload": PRO_PAYLOAD,
+        "currency": "XTR",
+        "prices": [("InvestLog Pro", PRO_STARS_PRICE)],
+    }
+
+
+# ── Payment: pre_checkout + successful_payment ─────────────────
+def pre_checkout_ok(payload: str) -> bool:
+    """Validate invoice payload before charging user."""
+    return payload == PRO_PAYLOAD
+
+
+def activate_pro_subscription(
+    user_id: str,
+    payment_charge_id: str,
+    provider_charge_id: str,
+    amount: int,
+    payload: str,
+) -> str:
+    """Persist payment + renew Pro subscription. Returns confirmation text."""
+    zh_flag = False
+    conn = _get_db()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT lang FROM telegram_notify_settings WHERE tg_user_id = %s",
+                (int(user_id),)
+            )
+            row = cur.fetchone()
+            zh_flag = bool(row and row[0] == "zh")
+        except Exception:
+            pass
+
+    if payload != PRO_PAYLOAD:
+        logger.warning("unknown payment payload: %s (user=%s)", payload, user_id)
+        return "⚠️ Unknown payment. Contact admin."
+
+    if not conn:
+        return (
+            "✅ 支付已收到，但数据库暂不可用，请联系管理员。"
+            if zh_flag else
+            "✅ Payment received but DB unavailable. Contact admin."
+        )
+
+    now = datetime.datetime.now()
+    expires = now + datetime.timedelta(days=30)
+
+    try:
+        cur = conn.cursor()
+        uid = int(user_id)
+        # Record payment
+        cur.execute(
+            "INSERT INTO tg_payments (tg_user_id, payment_charge_id, provider_charge_id, amount, payload, status, created_at) "
+            "VALUES (%s, %s, %s, %s, %s, 'completed', NOW())",
+            (uid, payment_charge_id or "", provider_charge_id or "", amount, payload)
+        )
+
+        # Stack renewal: if active sub exists, extend from current expiry
+        cur.execute(
+            "SELECT id, expires_at FROM tg_subscriptions WHERE tg_user_id = %s AND is_active = true ORDER BY expires_at DESC LIMIT 1",
+            (uid,)
+        )
+        row = cur.fetchone()
+        if row:
+            sub_id, cur_exp = row
+            if cur_exp and cur_exp > now:
+                expires = cur_exp + datetime.timedelta(days=30)
+            cur.execute(
+                "UPDATE tg_subscriptions SET tier='pro', stars_payment_id=%s, expires_at=%s, updated_at=NOW() WHERE id=%s",
+                (payment_charge_id or "", expires, sub_id)
+            )
+        else:
+            cur.execute(
+                "INSERT INTO tg_subscriptions (tg_user_id, tier, stars_payment_id, expires_at, is_active, started_at, created_at) "
+                "VALUES (%s, 'pro', %s, %s, true, NOW(), NOW())",
+                (uid, payment_charge_id or "", expires)
+            )
+
+        # Ensure notify_settings row exists (harmless if already)
+        cur.execute(
+            "INSERT INTO telegram_notify_settings (tg_user_id) VALUES (%s) ON CONFLICT (tg_user_id) DO NOTHING",
+            (uid,)
+        )
+
+        exp_str = expires.strftime("%Y-%m-%d")
+        logger.info("Pro activated user=%s expires=%s charge=%s", user_id, exp_str, payment_charge_id)
+        if zh_flag:
+            return f"✅ Pro 已激活！感谢支持 🎉\n有效期至 {exp_str}"
+        return f"✅ Pro activated! Thank you 🎉\nValid until {exp_str}"
+    except Exception as e:
+        logger.error("activate_pro_subscription failed user=%s: %s", user_id, e)
+        if zh_flag:
+            return "⚠️ 支付已收到，但激活失败，请联系管理员。"
+        return "⚠️ Payment received but activation failed. Contact admin."
 
 
 # ── /notify /subscribe /unsubscribe ────────────────────────────
