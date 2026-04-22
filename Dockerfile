@@ -18,10 +18,12 @@ RUN mkdir -p /data/.hermes
 COPY server.py /app/server.py
 COPY rate_limit.py /app/rate_limit.py
 COPY commands.py /app/commands.py
+COPY ticker_resolver.py /app/ticker_resolver.py
 COPY asr.py /app/asr.py
 COPY gateway_wrapper.py /app/gateway_wrapper.py
 COPY templates/ /app/templates/
 COPY skills/ /app/skills/
+COPY config/ /app/config/
 COPY start.sh /app/start.sh
 RUN chmod +x /app/start.sh
 

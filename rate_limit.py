@@ -658,6 +658,20 @@ def apply_patch():
                         logger.debug("Failed to send rate limit message: %s", e)
                     return None
 
+            # Ticker resolution: inject "(ref: CRWV=CoreWeave,Inc.)" prefix so LLM
+            # doesn't confabulate on post-cutoff IPOs. Mega-caps skip (0 token).
+            try:
+                from ticker_resolver import resolve_and_inject
+                _ticker_prefix = resolve_and_inject(msg)
+                if _ticker_prefix:
+                    try:
+                        event.text = _ticker_prefix + msg
+                    except Exception:
+                        pass
+                    msg = _ticker_prefix + msg
+            except Exception as e:
+                logger.debug("Ticker resolver error: %s", e)
+
             # Send "querying" status message before agent runs (match user language)
             status_msg_id = None
             try:
