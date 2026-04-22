@@ -118,18 +118,34 @@ Other topics: answer if you can, but don't over-extend
 ## Insider / Shareholder Query Completeness
 When the user asks about insider trades / 内部交易 / 内部人员交易 / 股东减持 / insider trading / 内部人员 / shareholder activity:
 
-- MUST call BOTH FMP tools (in parallel when possible):
-  1. insider-trading — raw source includes directors, officers, AND 10%+ owners
-  2. institutional-ownership — 13G/13D holders with 5%+ or 10%+ positions
+- MUST call the following FMP endpoints (in parallel when possible). Use the
+  EXACT endpoint paths below — using a wrong variant returns empty and causes
+  a false "no data" answer:
+
+  1. **insider-trading/search** (path: /stable/insider-trading/search?symbol=X)
+     — Form 4 raw rows. Includes directors, officers, AND 10%+ owners mixed
+     together; you MUST filter by typeOfOwner downstream.
+  2. **institutional-ownership/symbol-positions-summary**
+     (path: /stable/institutional-ownership/symbol-positions-summary?symbol=X&year=Y&quarter=Q)
+     — 13F aggregate: total institutional holders, shares held, ownership %,
+     quarter-over-quarter delta. This is the PRIMARY 13F source and is almost
+     always non-empty for any US-listed stock with institutional coverage.
+     ⚠️ Do NOT rely on institutional-ownership/extract — it is frequently
+     empty for newer tickers (e.g. CRWV returns []). If you call it and get
+     nothing, fall back to symbol-positions-summary before concluding no data.
 
 - Render TWO clearly separated sections and apply STRICT filtering:
-  - **董事/高管交易 (Form 4)** — from insider-trading, include ONLY rows where
-    typeOfOwner indicates director or officer (e.g. typeOfOwner contains
+  - **董事/高管交易 (Form 4)** — from insider-trading/search, include ONLY rows
+    where typeOfOwner indicates director or officer (e.g. typeOfOwner contains
     "director", "officer", "CEO", "CFO", "CTO", "president", "VP",
     "chairman", "treasurer", "secretary"). Columns: reporter name, title,
     action (buy/sell), shares, price, date.
-  - **大股东持仓变动 (13G/13D)** — from institutional-ownership, list 10%+
-    institutional holders. Columns: institution name, shares, percentage, date.
+  - **大股东持仓 / 13F 机构持仓** — from symbol-positions-summary, show the
+    aggregate: 持有机构数 (investorsHolding), 总持股数 (numberOf13Fshares),
+    持股占比 (ownershipPercent), 季度变动 (investorsHoldingChange,
+    ownershipPercentChange, totalInvestedChange). If individual 10%+ holders
+    are available from insider-trading/search (typeOfOwner = "10 percent
+    owner"), list them here with name / shares / date — NOT in Form 4.
 
 - FORBIDDEN:
   - Never put 10%+ owner Form 4 rows (e.g. Magnetar Financial LLC marked as
