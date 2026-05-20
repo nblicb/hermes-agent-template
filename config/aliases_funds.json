@@ -160,5 +160,100 @@
   "Bill Ackman": {"name": "Pershing Square", "cik": "0001336528"},
   "Pershing Square": {"name": "Pershing Square", "cik": "0001336528"},
 
+  "Situational Awareness": {"name": "Situational Awareness", "cik": "0002045724"},
+  "Leopold Aschenbrenner": {"name": "Situational Awareness", "cik": "0002045724"},
+  "Aschenbrenner": {"name": "Situational Awareness", "cik": "0002045724"},
+  "阿申布伦纳": {"name": "Situational Awareness", "cik": "0002045724"},
+
+  "Point72": {"name": "Point72 Asset Management", "cik": "0001603466"},
+  "Steven Cohen": {"name": "Point72 Asset Management", "cik": "0001603466"},
+  "Steve Cohen": {"name": "Point72 Asset Management", "cik": "0001603466"},
+  "史蒂夫科恩": {"name": "Point72 Asset Management", "cik": "0001603466"},
+  "科恩": {"name": "Point72 Asset Management", "cik": "0001603466"},
+
+  "Third Point": {"name": "Third Point LLC", "cik": "0001040273"},
+  "Daniel Loeb": {"name": "Third Point LLC", "cik": "0001040273"},
+  "Dan Loeb": {"name": "Third Point LLC", "cik": "0001040273"},
+  "罗布": {"name": "Third Point LLC", "cik": "0001040273"},
+
+  "Maverick": {"name": "Maverick Capital", "cik": "0000934639"},
+  "Maverick Capital": {"name": "Maverick Capital", "cik": "0000934639"},
+  "Lee Ainslie": {"name": "Maverick Capital", "cik": "0000934639"},
+
+  "D1": {"name": "D1 Capital Partners", "cik": "0001747057"},
+  "D1 Capital": {"name": "D1 Capital Partners", "cik": "0001747057"},
+  "Dan Sundheim": {"name": "D1 Capital Partners", "cik": "0001747057"},
+  "Sundheim": {"name": "D1 Capital Partners", "cik": "0001747057"},
+
+  "AQR": {"name": "AQR Capital Management", "cik": "0001167557"},
+  "AQR Capital": {"name": "AQR Capital Management", "cik": "0001167557"},
+  "Cliff Asness": {"name": "AQR Capital Management", "cik": "0001167557"},
+  "Asness": {"name": "AQR Capital Management", "cik": "0001167557"},
+
+  "Whale Rock": {"name": "Whale Rock Capital", "cik": "0001387322"},
+  "Whale Rock Capital": {"name": "Whale Rock Capital", "cik": "0001387322"},
+
+  "Light Street": {"name": "Light Street Capital", "cik": "0001569049"},
+  "Light Street Capital": {"name": "Light Street Capital", "cik": "0001569049"},
+  "Glen Kacher": {"name": "Light Street Capital", "cik": "0001569049"},
+
+  "Wellington": {"name": "Wellington Management", "cik": "0000902219"},
+  "Wellington Management": {"name": "Wellington Management", "cik": "0000902219"},
+  "惠灵顿": {"name": "Wellington Management", "cik": "0000902219"},
+
+  "Capital Research": {"name": "Capital Research Global Investors", "cik": "0001422848"},
+  "Capital Research Global": {"name": "Capital Research Global Investors", "cik": "0001422848"},
+  "Capital Group": {"name": "Capital Research Global Investors", "cik": "0001422848"},
+  "凯雷": {"name": "Capital Research Global Investors", "cik": "0001422848"},
+
+  "T Rowe Price": {"name": "T. Rowe Price", "cik": "0000080255"},
+  "T. Rowe Price": {"name": "T. Rowe Price", "cik": "0000080255"},
+  "普信": {"name": "T. Rowe Price", "cik": "0000080255"},
+
+  "PIMCO": {"name": "PIMCO", "cik": "0001163368"},
+  "Pacific Investment Management": {"name": "PIMCO", "cik": "0001163368"},
+  "品浩": {"name": "PIMCO", "cik": "0001163368"},
+  "太平洋投资": {"name": "PIMCO", "cik": "0001163368"},
+
+  "Franklin": {"name": "Franklin Resources", "cik": "0000038777"},
+  "Franklin Resources": {"name": "Franklin Resources", "cik": "0000038777"},
+  "Franklin Templeton": {"name": "Franklin Resources", "cik": "0000038777"},
+  "富兰克林": {"name": "Franklin Resources", "cik": "0000038777"},
+
+  "MFS": {"name": "Massachusetts Financial Services", "cik": "0000912938"},
+  "Massachusetts Financial Services": {"name": "Massachusetts Financial Services", "cik": "0000912938"},
+
+  "Janus Henderson": {"name": "Janus Henderson", "cik": "0001274173"},
+  "Janus": {"name": "Janus Henderson", "cik": "0001274173"},
+  "骏利": {"name": "Janus Henderson", "cik": "0001274173"},
+
+  "Northern Trust": {"name": "Northern Trust", "cik": "0000073124"},
+  "北方信托": {"name": "Northern Trust", "cik": "0000073124"},
+
+  "Geode": {"name": "Geode Capital Management", "cik": "0001214717"},
+  "Geode Capital": {"name": "Geode Capital Management", "cik": "0001214717"},
+
+  "Susquehanna": {"name": "Susquehanna International Group", "cik": "0001446194"},
+  "Susquehanna International": {"name": "Susquehanna International Group", "cik": "0001446194"},
+  "SIG": {"name": "Susquehanna International Group", "cik": "0001446194"},
+  "Jeff Yass": {"name": "Susquehanna International Group", "cik": "0001446194"},
+
+  "Atreides": {"name": "Atreides Management", "cik": "0001777813"},
+  "Atreides Management": {"name": "Atreides Management", "cik": "0001777813"},
+
+  "ICONIQ": {"name": "ICONIQ Capital", "cik": "0001569709"},
+  "ICONIQ Capital": {"name": "ICONIQ Capital", "cik": "0001569709"},
+
+  "Marshall Wace": {"name": "Marshall Wace", "cik": "0001318757"},
+
+  "Brevan Howard": {"name": "Brevan Howard", "cik": "0001512857"},
+  "Alan Howard": {"name": "Brevan Howard", "cik": "0001512857"},
+
+  "Lazard": {"name": "Lazard Asset Management", "cik": "0001207017"},
+  "Lazard Asset": {"name": "Lazard Asset Management", "cik": "0001207017"},
+  "Lazard Asset Management": {"name": "Lazard Asset Management", "cik": "0001207017"},
+
+  "Davidson Kempner": {"name": "Davidson Kempner Capital", "cik": "0001595082"},
+
   "对冲基金": null
 }
