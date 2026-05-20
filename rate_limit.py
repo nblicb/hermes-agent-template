@@ -672,6 +672,22 @@ def apply_patch():
             except Exception as e:
                 logger.debug("Ticker resolver error: %s", e)
 
+            # Fund/institution alias resolution: inject e.g.
+            # "(fund-ref: 段永平=H&H International CIK 0001759760)" so the LLM
+            # can call the institutional-ownership tool with the right CIK
+            # instead of asking the user for it. ~80 famous-investor aliases.
+            try:
+                from fund_resolver import resolve_and_inject as resolve_fund
+                _fund_prefix = resolve_fund(msg)
+                if _fund_prefix:
+                    try:
+                        event.text = _fund_prefix + msg
+                    except Exception:
+                        pass
+                    msg = _fund_prefix + msg
+            except Exception as e:
+                logger.debug("Fund resolver error: %s", e)
+
             # Send "querying" status message before agent runs (match user language)
             status_msg_id = None
             try:

@@ -1,0 +1,164 @@
+{
+  "贝莱德": {"name": "BlackRock", "cik": "0002012383"},
+  "BlackRock": {"name": "BlackRock", "cik": "0002012383"},
+
+  "先锋": {"name": "Vanguard", "cik": "0000102909"},
+  "先锋基金": {"name": "Vanguard", "cik": "0000102909"},
+  "Vanguard": {"name": "Vanguard", "cik": "0000102909"},
+
+  "富达": {"name": "Fidelity", "cik": "0000315066"},
+  "Fidelity": {"name": "Fidelity", "cik": "0000315066"},
+
+  "道富": {"name": "State Street", "cik": "0000093751"},
+  "State Street": {"name": "State Street", "cik": "0000093751"},
+
+  "高盛": {"name": "Goldman Sachs", "cik": "0000886982"},
+  "Goldman Sachs": {"name": "Goldman Sachs", "cik": "0000886982"},
+  "Goldman": {"name": "Goldman Sachs", "cik": "0000886982"},
+
+  "摩根士丹利": {"name": "Morgan Stanley", "cik": "0000895421"},
+  "摩根斯坦利": {"name": "Morgan Stanley", "cik": "0000895421"},
+  "摩根史丹利": {"name": "Morgan Stanley", "cik": "0000895421"},
+  "Morgan Stanley": {"name": "Morgan Stanley", "cik": "0000895421"},
+  "大摩": {"name": "Morgan Stanley", "cik": "0000895421"},
+
+  "摩根大通": {"name": "JPMorgan Chase", "cik": "0000019617"},
+  "JPMorgan": {"name": "JPMorgan Chase", "cik": "0000019617"},
+  "JPMorgan Chase": {"name": "JPMorgan Chase", "cik": "0000019617"},
+  "JP Morgan": {"name": "JPMorgan Chase", "cik": "0000019617"},
+  "小摩": {"name": "JPMorgan Chase", "cik": "0000019617"},
+
+  "富国银行": {"name": "Wells Fargo", "cik": "0000072971"},
+  "富国": {"name": "Wells Fargo", "cik": "0000072971"},
+  "Wells Fargo": {"name": "Wells Fargo", "cik": "0000072971"},
+
+  "美国银行": {"name": "Bank of America", "cik": "0000070858"},
+  "Bank of America": {"name": "Bank of America", "cik": "0000070858"},
+  "美银": {"name": "Bank of America", "cik": "0000070858"},
+  "BofA": {"name": "Bank of America", "cik": "0000070858"},
+
+  "花旗": {"name": "Citigroup", "cik": "0000831001"},
+  "花旗集团": {"name": "Citigroup", "cik": "0000831001"},
+  "Citigroup": {"name": "Citigroup", "cik": "0000831001"},
+  "Citi": {"name": "Citigroup", "cik": "0000831001"},
+
+  "巴克莱": {"name": "Barclays", "cik": "0000312069"},
+  "Barclays": {"name": "Barclays", "cik": "0000312069"},
+
+  "黑石": {"name": "Blackstone", "cik": "0001393818"},
+  "黑石集团": {"name": "Blackstone", "cik": "0001393818"},
+  "Blackstone": {"name": "Blackstone", "cik": "0001393818"},
+
+  "加拿大皇家银行": {"name": "Royal Bank of Canada", "cik": "0001000275"},
+  "RBC": {"name": "Royal Bank of Canada", "cik": "0001000275"},
+  "Royal Bank of Canada": {"name": "Royal Bank of Canada", "cik": "0001000275"},
+
+  "TD银行": {"name": "TD Asset Management", "cik": "0001056053"},
+  "TD": {"name": "TD Asset Management", "cik": "0001056053"},
+  "道明银行": {"name": "TD Asset Management", "cik": "0001056053"},
+
+  "BMO": {"name": "Bank of Montreal", "cik": "0000927971"},
+  "蒙特利尔银行": {"name": "Bank of Montreal", "cik": "0000927971"},
+  "Bank of Montreal": {"name": "Bank of Montreal", "cik": "0000927971"},
+
+  "杰富瑞": {"name": "Jefferies", "cik": "0000096223"},
+  "Jefferies": {"name": "Jefferies", "cik": "0000096223"},
+
+  "桥水": {"name": "Bridgewater Associates", "cik": "0001350694"},
+  "达利欧": {"name": "Bridgewater Associates", "cik": "0001350694"},
+  "Bridgewater": {"name": "Bridgewater Associates", "cik": "0001350694"},
+  "Ray Dalio": {"name": "Bridgewater Associates", "cik": "0001350694"},
+  "Dalio": {"name": "Bridgewater Associates", "cik": "0001350694"},
+
+  "文艺复兴": {"name": "Renaissance Technologies", "cik": "0001037389"},
+  "西蒙斯": {"name": "Renaissance Technologies", "cik": "0001037389"},
+  "Renaissance": {"name": "Renaissance Technologies", "cik": "0001037389"},
+  "Jim Simons": {"name": "Renaissance Technologies", "cik": "0001037389"},
+  "Simons": {"name": "Renaissance Technologies", "cik": "0001037389"},
+
+  "德鲁肯米勒": {"name": "Duquesne Family Office", "cik": "0001536411"},
+  "Druckenmiller": {"name": "Duquesne Family Office", "cik": "0001536411"},
+  "Duquesne": {"name": "Duquesne Family Office", "cik": "0001536411"},
+  "Stanley Druckenmiller": {"name": "Duquesne Family Office", "cik": "0001536411"},
+
+  "老虎环球": {"name": "Tiger Global", "cik": "0001167483"},
+  "Tiger Global": {"name": "Tiger Global", "cik": "0001167483"},
+  "老虎基金": {"name": "Tiger Global", "cik": "0001167483"},
+
+  "卡尔伊坎": {"name": "Carl Icahn", "cik": "0000921669"},
+  "Carl Icahn": {"name": "Carl Icahn", "cik": "0000921669"},
+  "伊坎": {"name": "Carl Icahn", "cik": "0000921669"},
+  "Icahn": {"name": "Carl Icahn", "cik": "0000921669"},
+
+  "比尔盖茨": {"name": "Cascade Investment", "cik": "0001166559"},
+  "Bill Gates": {"name": "Cascade Investment", "cik": "0001166559"},
+  "Cascade": {"name": "Cascade Investment", "cik": "0001166559"},
+  "盖茨基金": {"name": "Cascade Investment", "cik": "0001166559"},
+  "Gates": {"name": "Cascade Investment", "cik": "0001166559"},
+
+  "Lone Pine": {"name": "Lone Pine Capital", "cik": "0001061165"},
+  "Viking Global": {"name": "Viking Global Investors", "cik": "0001103804"},
+  "Viking": {"name": "Viking Global Investors", "cik": "0001103804"},
+  "Coatue": {"name": "Coatue Management", "cik": "0001535392"},
+
+  "两个西格玛": {"name": "Two Sigma Investments", "cik": "0001179392"},
+  "Two Sigma": {"name": "Two Sigma Investments", "cik": "0001179392"},
+
+  "城堡": {"name": "Citadel Advisors", "cik": "0001423053"},
+  "Citadel": {"name": "Citadel Advisors", "cik": "0001423053"},
+
+  "千禧": {"name": "Millennium Management", "cik": "0001273087"},
+  "Millennium": {"name": "Millennium Management", "cik": "0001273087"},
+
+  "D.E. Shaw": {"name": "D.E. Shaw", "cik": "0001009207"},
+  "DE Shaw": {"name": "D.E. Shaw", "cik": "0001009207"},
+
+  "挪威油基金": {"name": "Norges Bank", "cik": "0001603466"},
+  "挪威主权基金": {"name": "Norges Bank", "cik": "0001603466"},
+  "Norges Bank": {"name": "Norges Bank", "cik": "0001603466"},
+  "Norges": {"name": "Norges Bank", "cik": "0001603466"},
+
+  "巴菲特": {"name": "Berkshire Hathaway", "cik": "0001067983"},
+  "伯克希尔": {"name": "Berkshire Hathaway", "cik": "0001067983"},
+  "Buffett": {"name": "Berkshire Hathaway", "cik": "0001067983"},
+  "Warren Buffett": {"name": "Berkshire Hathaway", "cik": "0001067983"},
+  "Berkshire": {"name": "Berkshire Hathaway", "cik": "0001067983"},
+  "Berkshire Hathaway": {"name": "Berkshire Hathaway", "cik": "0001067983"},
+
+  "ARK": {"name": "ARK Investment"},
+  "ARK基金": {"name": "ARK Investment"},
+  "木头姐": {"name": "ARK Investment"},
+  "木头姐基金": {"name": "ARK Investment"},
+  "Cathie Wood": {"name": "ARK Investment"},
+
+  "索罗斯": {"name": "Soros Fund Management", "cik": "0001029160"},
+  "Soros": {"name": "Soros Fund Management", "cik": "0001029160"},
+  "George Soros": {"name": "Soros Fund Management", "cik": "0001029160"},
+
+  "高瓴": {"name": "Hillhouse", "cik": "0001649339"},
+  "高瓴资本": {"name": "Hillhouse", "cik": "0001649339"},
+  "Hillhouse": {"name": "Hillhouse", "cik": "0001649339"},
+  "李录": {"name": "Himalaya Capital", "cik": "0001709323"},
+  "喜马拉雅": {"name": "Himalaya Capital", "cik": "0001709323"},
+  "Himalaya": {"name": "Himalaya Capital", "cik": "0001709323"},
+  "Li Lu": {"name": "Himalaya Capital", "cik": "0001709323"},
+  "景林": {"name": "Greenwoods Asset Management", "cik": "0001569884"},
+  "Greenwoods": {"name": "Greenwoods Asset Management", "cik": "0001569884"},
+  "但斌": {"name": "Dongfang Harbor", "cik": "0002046333"},
+  "东方港湾": {"name": "Dongfang Harbor", "cik": "0002046333"},
+  "Dan Bin": {"name": "Dongfang Harbor", "cik": "0002046333"},
+  "段永平": {"name": "H&H International", "cik": "0001759760"},
+  "Duan Yongping": {"name": "H&H International", "cik": "0001759760"},
+
+  "泰珀": {"name": "Appaloosa Management", "cik": "0001656456"},
+  "Appaloosa": {"name": "Appaloosa Management", "cik": "0001656456"},
+  "David Tepper": {"name": "Appaloosa Management", "cik": "0001656456"},
+  "Tepper": {"name": "Appaloosa Management", "cik": "0001656456"},
+  "阿克曼": {"name": "Pershing Square", "cik": "0001336528"},
+  "比尔阿克曼": {"name": "Pershing Square", "cik": "0001336528"},
+  "Ackman": {"name": "Pershing Square", "cik": "0001336528"},
+  "Bill Ackman": {"name": "Pershing Square", "cik": "0001336528"},
+  "Pershing Square": {"name": "Pershing Square", "cik": "0001336528"},
+
+  "对冲基金": null
+}
