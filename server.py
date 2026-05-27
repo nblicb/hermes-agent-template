@@ -139,7 +139,7 @@ def write_config_yaml(data: dict[str, str]) -> None:
         "api_key": data.get("OPENAI_API_KEY", ""),
     }
     config.setdefault("terminal", {"backend": "local", "timeout": 60, "cwd": "/tmp"})
-    config.setdefault("agent", {"max_iterations": 50})
+    config.setdefault("agent", {"max_iterations": 30})
     config["data_dir"] = HERMES_HOME
     config_path.write_text(yaml.dump(config, default_flow_style=False, allow_unicode=True))
 
