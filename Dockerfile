@@ -5,8 +5,11 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 # Install hermes-agent as a package (gives us the `hermes` CLI entry point)
+ARG HERMES_AGENT_REF=458a94e42568b332e8794ca8fbb8c8e1279160a3
 RUN git clone --depth 1 https://github.com/NousResearch/hermes-agent.git /tmp/hermes-agent && \
     cd /tmp/hermes-agent && \
+    git fetch --depth 1 origin ${HERMES_AGENT_REF} && \
+    git checkout ${HERMES_AGENT_REF} && \
     uv pip install --system --no-cache -e ".[all]" && \
     rm -rf /tmp/hermes-agent/.git
 

@@ -514,9 +514,13 @@ def _apply_api_server_user_id_patch():
             session_id=None,
             stream_delta_callback=None,
             tool_progress_callback=None,
+            tool_start_callback=None,
+            tool_complete_callback=None,
             agent_ref=None,
+            gateway_session_key=None,
+            **_extra_kwargs,
         ):
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
             user_id = _hermes_user_id_var.get()
             resolved_user_message = _inject_reference_prefix(user_message)
 
@@ -526,6 +530,9 @@ def _apply_api_server_user_id_patch():
                     session_id=session_id,
                     stream_delta_callback=stream_delta_callback,
                     tool_progress_callback=tool_progress_callback,
+                    tool_start_callback=tool_start_callback,
+                    tool_complete_callback=tool_complete_callback,
+                    gateway_session_key=gateway_session_key,
                     user_id=user_id,
                 )
                 if agent_ref is not None:
@@ -533,13 +540,16 @@ def _apply_api_server_user_id_patch():
                 result = agent.run_conversation(
                     user_message=resolved_user_message,
                     conversation_history=conversation_history,
-                    task_id="default",
+                    task_id=session_id or "default",
                 )
                 usage = {
                     "input_tokens": getattr(agent, "session_prompt_tokens", 0) or 0,
                     "output_tokens": getattr(agent, "session_completion_tokens", 0) or 0,
                     "total_tokens": getattr(agent, "session_total_tokens", 0) or 0,
                 }
+                effective_session_id = getattr(agent, "session_id", session_id)
+                if isinstance(result, dict) and isinstance(effective_session_id, str) and effective_session_id:
+                    result["session_id"] = effective_session_id
                 return result, usage
 
             return await loop.run_in_executor(None, _run)
@@ -553,7 +563,11 @@ def _apply_api_server_user_id_patch():
             session_id=None,
             stream_delta_callback=None,
             tool_progress_callback=None,
+            tool_start_callback=None,
+            tool_complete_callback=None,
+            gateway_session_key=None,
             user_id=None,
+            **_extra_kwargs,
         ):
             from run_agent import AIAgent
             from gateway.run import (
@@ -570,6 +584,7 @@ def _apply_api_server_user_id_patch():
             enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
             max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "30"))
             fallback_model = GatewayRunner._load_fallback_model()
+            reasoning_config = GatewayRunner._load_reasoning_config()
 
             return AIAgent(
                 model=model,
@@ -583,8 +598,12 @@ def _apply_api_server_user_id_patch():
                 platform="api_server",
                 stream_delta_callback=stream_delta_callback,
                 tool_progress_callback=tool_progress_callback,
+                tool_start_callback=tool_start_callback,
+                tool_complete_callback=tool_complete_callback,
                 session_db=self._ensure_session_db(),
                 fallback_model=fallback_model,
+                reasoning_config=reasoning_config,
+                gateway_session_key=gateway_session_key,
                 user_id=user_id,
             )
 
