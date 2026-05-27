@@ -337,7 +337,12 @@ head -1 /data/.hermes/SOUL.md
 echo "[start.sh] AGENTS.md first line:"
 head -1 /data/.hermes/AGENTS.md
 echo "[start.sh] config.yaml:"
-cat "$CONFIG"
+sed -E \
+  -e 's/(api_key: ).*/\1[redacted]/' \
+  -e 's/(apikey=)[^"&[:space:]]+/\1[redacted]/g' \
+  -e 's/(BINANCE_API_KEY: ).*/\1[redacted]/' \
+  -e 's/(BINANCE_API_SECRET: ).*/\1[redacted]/' \
+  "$CONFIG"
 echo "[start.sh] === END DIAGNOSTIC ==="
 
 # Set Telegram bot menu commands (runs once at boot)
