@@ -518,6 +518,7 @@ def _apply_api_server_user_id_patch():
         ):
             loop = asyncio.get_event_loop()
             user_id = _hermes_user_id_var.get()
+            resolved_user_message = _inject_reference_prefix(user_message)
 
             def _run():
                 agent = self._create_agent(
@@ -530,7 +531,7 @@ def _apply_api_server_user_id_patch():
                 if agent_ref is not None:
                     agent_ref[0] = agent
                 result = agent.run_conversation(
-                    user_message=user_message,
+                    user_message=resolved_user_message,
                     conversation_history=conversation_history,
                     task_id="default",
                 )
@@ -592,6 +593,39 @@ def _apply_api_server_user_id_patch():
         print("[API SERVER USER_ID PATCH] installed (X-Hermes-User-Id → AIAgent.user_id)", flush=True)
     except Exception as e:
         print(f"[API SERVER USER_ID PATCH] FAILED: {e}", flush=True)
+
+
+def _inject_reference_prefix(msg):
+    """Add the same ticker/fund context refs used by Telegram to API messages."""
+    if not isinstance(msg, str) or not msg:
+        return msg
+
+    prefixes = []
+    # Avoid stacking refs when a caller already supplied one.
+    has_ticker_ref = msg.lstrip().startswith("(ref:")
+    has_fund_ref = msg.lstrip().startswith("(fund-ref:") or "\n(fund-ref:" in msg[:200]
+
+    if not has_ticker_ref:
+        try:
+            from ticker_resolver import resolve_and_inject
+            ticker_prefix = resolve_and_inject(msg)
+            if ticker_prefix:
+                prefixes.append(ticker_prefix)
+        except Exception as e:
+            logger.debug("Ticker resolver error: %s", e)
+
+    if not has_fund_ref:
+        try:
+            from fund_resolver import resolve_and_inject as resolve_fund
+            fund_prefix = resolve_fund(msg)
+            if fund_prefix:
+                prefixes.append(fund_prefix)
+        except Exception as e:
+            logger.debug("Fund resolver error: %s", e)
+
+    if not prefixes:
+        return msg
+    return "".join(prefixes) + msg
 
 
 def apply_patch():
@@ -658,35 +692,14 @@ def apply_patch():
                         logger.debug("Failed to send rate limit message: %s", e)
                     return None
 
-            # Ticker resolution: inject "(ref: CRWV=CoreWeave,Inc.)" prefix so LLM
-            # doesn't confabulate on post-cutoff IPOs. Mega-caps skip (0 token).
-            try:
-                from ticker_resolver import resolve_and_inject
-                _ticker_prefix = resolve_and_inject(msg)
-                if _ticker_prefix:
-                    try:
-                        event.text = _ticker_prefix + msg
-                    except Exception:
-                        pass
-                    msg = _ticker_prefix + msg
-            except Exception as e:
-                logger.debug("Ticker resolver error: %s", e)
-
-            # Fund/institution alias resolution: inject e.g.
-            # "(fund-ref: 段永平=H&H International CIK 0001759760)" so the LLM
-            # can call the institutional-ownership tool with the right CIK
-            # instead of asking the user for it. ~80 famous-investor aliases.
-            try:
-                from fund_resolver import resolve_and_inject as resolve_fund
-                _fund_prefix = resolve_fund(msg)
-                if _fund_prefix:
-                    try:
-                        event.text = _fund_prefix + msg
-                    except Exception:
-                        pass
-                    msg = _fund_prefix + msg
-            except Exception as e:
-                logger.debug("Fund resolver error: %s", e)
+            # Keep Telegram and API-server entrypoints aligned on ticker/fund refs.
+            injected_msg = _inject_reference_prefix(msg)
+            if injected_msg != msg:
+                try:
+                    event.text = injected_msg
+                except Exception:
+                    pass
+                msg = injected_msg
 
             # Send "querying" status message before agent runs (match user language)
             status_msg_id = None

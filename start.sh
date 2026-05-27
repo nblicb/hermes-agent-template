@@ -32,6 +32,7 @@ agent:
 
 platform_toolsets:
   telegram: [web, memory]
+  api_server: [web, memory]
 
 display:
   platforms:
