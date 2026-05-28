@@ -48,6 +48,7 @@ import time
 import logging
 import datetime
 import contextvars
+import asyncio
 from collections import deque
 
 logger = logging.getLogger("rate_limit")
@@ -146,6 +147,84 @@ def _user_lang(uid: str, message: str = "") -> str:
     if message and any('\u4e00' <= c <= '\u9fff' for c in message):
         return "zh"
     return "en"
+
+
+def _telegram_status_steps(message: str, lang: str) -> list[tuple[int, str]]:
+    """Sparse Telegram progress updates. Keep edits rare to avoid chat noise."""
+    text = (message or "").lower()
+    zh = lang == "zh"
+
+    if "form 144" in text or "计划减持" in text or "planned sale" in text:
+        return [
+            (0, "🔎 正在识别 Form 144 计划减持问题..." if zh else "🔎 Reading the Form 144 planned-sale question..."),
+            (8, "📄 正在查询披露和事件数据..." if zh else "📄 Fetching filing and event data..."),
+            (22, "🧮 正在核对卖方、股数和金额..." if zh else "🧮 Checking seller, shares, and value..."),
+        ]
+    if "13f" in text or "机构持仓" in text or "institutional" in text or "holding" in text:
+        return [
+            (0, "🔎 正在识别 13F / 机构持仓问题..." if zh else "🔎 Reading the 13F / holdings question..."),
+            (8, "📊 正在查询机构持仓数据..." if zh else "📊 Fetching institutional holdings..."),
+            (22, "🧮 正在整理增减仓和共识变化..." if zh else "🧮 Summarizing position changes..."),
+        ]
+    if "内部人" in text or "insider" in text or "form 4" in text or "高管" in text or "董事" in text:
+        return [
+            (0, "🔎 正在识别内部人交易问题..." if zh else "🔎 Reading the insider-trading question..."),
+            (8, "📄 正在查询内部人买卖披露..." if zh else "📄 Fetching insider disclosures..."),
+            (22, "🧮 正在区分买入、卖出和常规交易..." if zh else "🧮 Separating buys, sells, and routine activity..."),
+        ]
+    if "财报" in text or "earnings" in text or "revenue" in text or "eps" in text or "营收" in text:
+        return [
+            (0, "🔎 正在识别财报问题..." if zh else "🔎 Reading the earnings question..."),
+            (8, "📊 正在查询营收、EPS 和利润率..." if zh else "📊 Fetching revenue, EPS, and margins..."),
+            (22, "🧮 正在对比同比、环比和预期..." if zh else "🧮 Comparing YoY, sequential, and estimates..."),
+        ]
+    if "评级" in text or "analyst" in text or "rating" in text or "upgrade" in text or "downgrade" in text or "目标价" in text:
+        return [
+            (0, "🔎 正在识别分析师评级问题..." if zh else "🔎 Reading the analyst-rating question..."),
+            (8, "📊 正在查询评级和目标价变化..." if zh else "📊 Fetching ratings and price targets..."),
+            (22, "🧮 正在整理上调、下调和共识分布..." if zh else "🧮 Summarizing upgrades, downgrades, and consensus..."),
+        ]
+    if (
+        "估值" in text or "valuation" in text or " p/e " in f" {text} " or
+        " pe " in f" {text} " or "市盈率" in text or "市销率" in text or
+        " pb " in f" {text} " or " ps " in f" {text} " or
+        " roe " in f" {text} " or " roic " in f" {text} " or
+        " fcf " in f" {text} " or " dcf " in f" {text} "
+    ):
+        return [
+            (0, "🔎 正在识别估值问题..." if zh else "🔎 Reading the valuation question..."),
+            (8, "📊 正在查询行情、估值和财务指标..." if zh else "📊 Fetching quote, valuation, and financial metrics..."),
+            (22, "🧮 正在对比盈利质量和估值倍数..." if zh else "🧮 Comparing profitability quality and multiples..."),
+        ]
+    return [
+        (0, "🔎 正在理解问题并判断所需数据..." if zh else "🔎 Reading the question and identifying data..."),
+        (8, "📊 正在查询相关市场数据..." if zh else "📊 Fetching relevant market data..."),
+        (22, "🧮 正在组织分析结论..." if zh else "🧮 Organizing the analysis..."),
+    ]
+
+
+async def _telegram_progress_loop(adapter, chat_id, message_id, steps: list[tuple[int, str]]):
+    """Edit one temporary Telegram status message at sparse milestones."""
+    if not adapter or not hasattr(adapter, "_bot") or not chat_id or not message_id:
+        return
+
+    last_delay = 0
+    last_text = steps[0][1] if steps else ""
+    for delay, text in steps[1:]:
+        await asyncio.sleep(max(0, delay - last_delay))
+        last_delay = delay
+        if text == last_text:
+            continue
+        last_text = text
+        try:
+            await adapter._bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+            )
+        except Exception as e:
+            logger.debug("Failed to edit Telegram status: %s", e)
+            return
 
 
 def check_rate_limit(uid: str, message: str) -> str | None:
@@ -722,11 +801,13 @@ def apply_patch():
 
             # Send "querying" status message before agent runs (match user language)
             status_msg_id = None
+            progress_task = None
             try:
                 chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
                 adapter = self.adapters.get(platform)
                 lang = _user_lang(str(uid) if uid else "", msg)
-                status_text = "🔍 正在查询数据..." if lang == "zh" else "🔍 Fetching data..."
+                status_steps = _telegram_status_steps(msg, lang)
+                status_text = status_steps[0][1]
                 if adapter and chat_id:
                     sent = await adapter.send(chat_id, status_text)
                     # Try to get message ID for later deletion
@@ -734,13 +815,25 @@ def apply_patch():
                         status_msg_id = sent.message_id
                     elif sent and isinstance(sent, dict):
                         status_msg_id = sent.get('message_id')
+                    if status_msg_id:
+                        progress_task = asyncio.create_task(
+                            _telegram_progress_loop(adapter, chat_id, status_msg_id, status_steps)
+                        )
             except Exception:
                 pass
 
             # Call original handler
             result = await _original(self, event)
 
-            # Delete status message after response
+            # Stop progress edits, then delete status message after response.
+            if progress_task:
+                progress_task.cancel()
+                try:
+                    await progress_task
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
             if status_msg_id:
                 try:
                     chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
