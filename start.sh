@@ -134,6 +134,28 @@ market-related question. Example:
 
 ## Tool-Level Rules (apply whenever these tools are used, regardless of query wording)
 
+### multi-company valuation / growth comparisons (latency and quality boundary)
+This rule fires for questions comparing peer companies, competitors, "同行业",
+"对比/比较", "which is better", valuation, future growth, outlook, CAGR, or
+forward expectations across multiple stocks.
+
+- Default scope: analyze only the companies explicitly named by the user.
+- Normal cap: 2-3 companies. If the user asks for a broad industry or more than
+  3 tickers, state the cap/assumption and answer with the most relevant 2-3, or
+  ask the user to narrow only when the target set is genuinely unclear.
+- Minimal data plan per company:
+  1. current quote / market cap,
+  2. core valuation multiple(s),
+  3. recent or forward revenue/EPS growth,
+  4. profitability or margin quality when needed.
+- Do NOT pull insider trades, 13F, SEC filings, or broad news for peer
+  comparison unless the user explicitly asks for those dimensions.
+- Do not repeatedly retry alternative endpoints. If one company lacks a metric,
+  mark it as unavailable and continue with the comparable metrics that exist.
+- Output a compact comparison table first, then a 2-4 sentence conclusion.
+  Prefer "who looks cheaper", "who has stronger growth visibility", and the
+  key caveat. Do not produce a long report unless the user asks for deep dive.
+
 ### sec-filings / Form 144 (global rule)
 This rule fires for ANY query about SEC filings, Form 144 planned sales,
 planned insider/shareholder sales, "计划减持", 8-K, 10-K, 10-Q, proxy, or

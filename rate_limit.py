@@ -49,6 +49,7 @@ import logging
 import datetime
 import contextvars
 import asyncio
+import re
 from collections import deque
 
 logger = logging.getLogger("rate_limit")
@@ -152,7 +153,33 @@ def _user_lang(uid: str, message: str = "") -> str:
 def _telegram_status_steps(message: str, lang: str) -> list[tuple[int, str]]:
     """Sparse Telegram progress updates. Keep edits rare to avoid chat noise."""
     text = (message or "").lower()
+    tickers = re.findall(r"\b[A-Z]{1,5}(?:\.[A-Z])?\b", message or "")
     zh = lang == "zh"
+
+    comparison_intent = (
+        "同行" in text or "同业" in text or "竞品" in text or "对手" in text or
+        "对比" in text or "比较" in text or "相比" in text or "谁更" in text or
+        "哪个更" in text or "孰优" in text or " vs" in f" {text}" or
+        "versus" in text or "compare" in text or "comparison" in text or
+        "peer" in text or "competitor" in text
+    )
+    growth_or_valuation_intent = (
+        "估值" in text or "valuation" in text or " p/e " in f" {text} " or
+        " pe " in f" {text} " or "市盈率" in text or "市销率" in text or
+        " pb " in f" {text} " or " ps " in f" {text} " or
+        " roe " in f" {text} " or " roic " in f" {text} " or
+        " fcf " in f" {text} " or " dcf " in f" {text} " or
+        "增长" in text or "成长" in text or "增速" in text or "未来" in text or
+        "预期" in text or "展望" in text or "guidance" in text or
+        "outlook" in text or "forecast" in text or "growth" in text or
+        "cagr" in text
+    )
+    if comparison_intent or (len(tickers) >= 2 and growth_or_valuation_intent):
+        return [
+            (0, "🔎 正在识别多公司对比问题..." if zh else "🔎 Reading the multi-company comparison question..."),
+            (8, "📊 正在查询核心估值、增长和盈利指标..." if zh else "📊 Fetching core valuation, growth, and profitability metrics..."),
+            (22, "🧮 正在压缩多组数据并形成可比结论..." if zh else "🧮 Compressing datasets into a comparable conclusion..."),
+        ]
 
     if "form 144" in text or "计划减持" in text or "planned sale" in text:
         return [
