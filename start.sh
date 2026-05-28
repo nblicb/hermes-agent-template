@@ -23,11 +23,11 @@ model:
 
 terminal:
   backend: "local"
-  timeout: 60
+  timeout: ${HERMES_TERMINAL_TIMEOUT:-45}
   cwd: "/data/.hermes"
 
 agent:
-  max_iterations: 30
+  max_iterations: ${HERMES_MAX_ITERATIONS:-12}
   max_output_tokens: 2000
 
 platform_toolsets:
@@ -52,7 +52,7 @@ if [ -n "$FMP_API_KEY" ]; then
 mcp_servers:
   fmp:
     url: "https://financialmodelingprep.com/mcp?apikey=${FMP_API_KEY}"
-    timeout: 120
+    timeout: ${HERMES_MCP_TIMEOUT:-45}
 EOF
   echo "[start.sh] FMP MCP server configured (official HTTP endpoint)"
 fi
@@ -70,7 +70,7 @@ if [ -n "$BINANCE_API_KEY" ]; then
     env:
       BINANCE_API_KEY: "${BINANCE_API_KEY}"
       BINANCE_API_SECRET: "${BINANCE_API_SECRET}"
-    timeout: 120
+    timeout: ${HERMES_MCP_TIMEOUT:-45}
 EOF
   echo "[start.sh] Binance MCP server configured"
 fi

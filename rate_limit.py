@@ -582,7 +582,7 @@ def _apply_api_server_user_id_patch():
             model = _resolve_gateway_model()
             user_config = _load_gateway_config()
             enabled_toolsets = sorted(_get_platform_tools(user_config, "api_server"))
-            max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "30"))
+            max_iterations = int(os.getenv("HERMES_MAX_ITERATIONS", "12"))
             fallback_model = GatewayRunner._load_fallback_model()
             reasoning_config = GatewayRunner._load_reasoning_config()
 
