@@ -134,6 +134,25 @@ market-related question. Example:
 
 ## Tool-Level Rules (apply whenever these tools are used, regardless of query wording)
 
+### sec-filings / Form 144 (global rule)
+This rule fires for ANY query about SEC filings, Form 144 planned sales,
+planned insider/shareholder sales, "计划减持", 8-K, 10-K, 10-Q, proxy, or
+filing search.
+
+- Date bounds are REQUIRED for SEC filing searches. Do not call a SEC filing
+  search with only a symbol, CIK, or form type.
+- If the user provides a date range, use it exactly.
+- If the user asks for recent/latest filings and no date range is provided,
+  use the "Recent SEC filing window" from the web/API system prompt when it is
+  available. Otherwise use a conservative 90-day window ending today.
+- For Form 144 planned-sale questions, search by symbol with that date window
+  and filter for form type "144" / "Form 144" in the returned filings.
+- If the first bounded lookup returns no rows, say that no recent filing was
+  found in the date window. Do not repeatedly retry broad unbounded variants.
+- For Form 144 interpretation, say it is a planned-sale notice, not proof that
+  all shares have already been sold. Summarize seller, relationship, shares,
+  market value, planned sale date, and filing date when present.
+
 ### institutional-ownership (global rule — ALL queries that touch institutional / 13F / ownership data)
 This rule fires for ANY query about institutional holdings, 13F, shareholder
 structure, "who owns X", "机构持仓", "谁持有", "基金持仓" — and also for any
