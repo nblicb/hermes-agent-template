@@ -80,6 +80,30 @@ _hermes_user_id_var: contextvars.ContextVar = contextvars.ContextVar(
     "hermes_user_id", default=None
 )
 
+_EARNINGS_INTENT_RE = re.compile(
+    r"(财报|业绩|营收|利润|毛利|指引|盘前|盘后|earnings|revenue|eps|"
+    r"guidance|gross margin|gaap|non-gaap|ebit|capex|free cash flow|fcf)",
+    re.IGNORECASE,
+)
+
+
+def _earnings_analysis_prefix(msg: str) -> str:
+    """Compact guidance for earnings questions across Telegram and API server."""
+    if not isinstance(msg, str) or not _EARNINGS_INTENT_RE.search(msg):
+        return ""
+    if msg.lstrip().startswith("(earnings-analysis-guide:"):
+        return ""
+    return (
+        "(earnings-analysis-guide: For earnings questions, separate calendar preview, "
+        "official results release, and post-release analysis. Use earnings calendar "
+        "consensus EPS/revenue to classify reported results as beat/miss/in-line. "
+        "For deeper analysis, inspect official release/filings/statements/transcript "
+        "when available and cover gross margin, operating margin or EBIT, GAAP vs "
+        "non-GAAP bridge, free cash flow, capex, segment revenue, and guidance. "
+        "Do not invent missing metrics; state what still needs 8-K, statement tables, "
+        "or the earnings-call transcript.)\n"
+    )
+
 def _get_db():
     global _db_conn
     if _db_conn is not None:
@@ -749,7 +773,11 @@ def _inject_reference_prefix(msg):
             logger.debug("Fund resolver error: %s", e)
 
     if not prefixes:
-        return msg
+        earnings_prefix = _earnings_analysis_prefix(msg)
+        return earnings_prefix + msg if earnings_prefix else msg
+    earnings_prefix = _earnings_analysis_prefix(msg)
+    if earnings_prefix:
+        prefixes.append(earnings_prefix)
     return "".join(prefixes) + msg
 
 
