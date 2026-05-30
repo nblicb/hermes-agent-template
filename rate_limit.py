@@ -177,7 +177,10 @@ def _user_lang(uid: str, message: str = "") -> str:
 def _telegram_status_steps(message: str, lang: str) -> list[tuple[int, str]]:
     """Sparse Telegram progress updates. Keep edits rare to avoid chat noise."""
     text = (message or "").lower()
-    tickers = re.findall(r"\b[A-Z]{1,5}(?:\.[A-Z])?\b", message or "")
+    tickers = re.findall(
+        r"\b(?:[A-Z0-9]{2,14}USD|\d{4}\.(?:TWO|TW|HK|T)|\d{6}\.(?:KS|KQ)|[A-Z]{1,6}(?:\.[A-Z])?)\b",
+        message or "",
+    )
     zh = lang == "zh"
 
     comparison_intent = (
