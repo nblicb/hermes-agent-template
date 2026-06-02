@@ -137,6 +137,26 @@ market-related question. Example:
 
 ## Tool-Level Rules (apply whenever these tools are used, regardless of query wording)
 
+### single-company latest earnings (global rule)
+This rule fires for questions like "latest earnings", "最新财报", "业绩",
+"earnings report", revenue/profit/EPS, guidance, or earnings-call analysis for
+one company.
+
+- Treat this as an earnings recap, not peer/comparison research, unless the
+  user explicitly asks for peers or "对比/比较".
+- Start with the latest reported fiscal period and report/release date.
+- Use company statement or official release data before valuation ratios.
+  Valuation multiples alone are not an earnings answer.
+- Required fields when available: revenue, net income, EPS with GAAP/non-GAAP
+  labels, gross margin, operating income or EBIT, free cash flow, capex,
+  segment revenue, and management guidance/outlook.
+- Use consensus EPS/revenue only to classify beat/miss/in-line. Do not let
+  estimates replace actual income-statement data.
+- Attempt earnings-call transcript or prepared remarks when relevant. If
+  unavailable, explicitly state that transcript/call details were not available.
+- If any required metric is unavailable after lookup, state that limitation
+  instead of silently omitting it or filling it with unrelated valuation data.
+
 ### multi-company valuation / growth comparisons (latency and quality boundary)
 This rule fires for questions comparing peer companies, competitors, "同行业",
 "对比/比较", "which is better", valuation, future growth, outlook, CAGR, or

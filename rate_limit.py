@@ -95,13 +95,16 @@ def _earnings_analysis_prefix(msg: str) -> str:
         return ""
     return (
         "(earnings-analysis-guide: For earnings questions, separate calendar preview, "
-        "official results release, and post-release analysis. Use earnings calendar "
-        "consensus EPS/revenue to classify reported results as beat/miss/in-line. "
-        "For deeper analysis, inspect official release/filings/statements/transcript "
-        "when available and cover gross margin, operating margin or EBIT, GAAP vs "
-        "non-GAAP bridge, free cash flow, capex, segment revenue, and guidance. "
-        "Do not invent missing metrics; state what still needs 8-K, statement tables, "
-        "or the earnings-call transcript.)\n"
+        "official results release, and post-release analysis. For a single-company "
+        "latest earnings request, answer as an earnings recap, not peer/comparison "
+        "research. First use company statement or official release data for actual "
+        "revenue, net income, EPS with GAAP/non-GAAP labels, gross margin, operating "
+        "income or EBIT, free cash flow, capex, segment revenue, and guidance when "
+        "available. Then use consensus EPS/revenue only to classify beat/miss/in-line. "
+        "Attempt earnings-call transcript or prepared remarks when relevant; if not "
+        "available, explicitly state transcript/call details are unavailable. Valuation "
+        "ratios alone are not an earnings answer. Do not invent missing metrics; state "
+        "what still needs 8-K, statement tables, or the earnings-call transcript.)\n"
     )
 
 def _get_db():
@@ -176,10 +179,16 @@ def _user_lang(uid: str, message: str = "") -> str:
 
 def _telegram_status_steps(message: str, lang: str) -> list[tuple[int, str]]:
     """Sparse Telegram progress updates. Keep edits rare to avoid chat noise."""
-    text = (message or "").lower()
+    raw_message = re.sub(
+        r"^\(earnings-analysis-guide:.*?\)\n",
+        "",
+        message or "",
+        flags=re.DOTALL,
+    )
+    text = raw_message.lower()
     tickers = re.findall(
         r"\b(?:[A-Z0-9]{2,14}USD|\d{4}\.(?:TWO|TW|HK|T)|\d{6}\.(?:KS|KQ)|[A-Z]{1,6}(?:\.[A-Z])?)\b",
-        message or "",
+        raw_message,
     )
     zh = lang == "zh"
 
@@ -230,7 +239,7 @@ def _telegram_status_steps(message: str, lang: str) -> list[tuple[int, str]]:
         return [
             (0, "🔎 正在识别财报问题..." if zh else "🔎 Reading the earnings question..."),
             (8, "📊 正在查询营收、EPS 和利润率..." if zh else "📊 Fetching revenue, EPS, and margins..."),
-            (22, "🧮 正在对比同比、环比和预期..." if zh else "🧮 Comparing YoY, sequential, and estimates..."),
+            (22, "🧮 正在核对净利润、现金流和管理层指引..." if zh else "🧮 Checking net income, cash flow, and guidance..."),
         ]
     if "评级" in text or "analyst" in text or "rating" in text or "upgrade" in text or "downgrade" in text or "目标价" in text:
         return [
@@ -799,6 +808,7 @@ def apply_patch():
         async def _patched_handle_message(self, event):
             uid = getattr(getattr(event, 'source', None), 'user_id', None)
             msg = getattr(event, 'text', '') or ''
+            original_user_msg = msg
             platform = getattr(getattr(event, 'source', None), 'platform', None)
             platform_name = platform.value if platform else "unknown"
             start_ms = time.monotonic()
@@ -863,8 +873,8 @@ def apply_patch():
             try:
                 chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
                 adapter = self.adapters.get(platform)
-                lang = _user_lang(str(uid) if uid else "", msg)
-                status_steps = _telegram_status_steps(msg, lang)
+                lang = _user_lang(str(uid) if uid else "", original_user_msg)
+                status_steps = _telegram_status_steps(original_user_msg, lang)
                 status_text = status_steps[0][1]
                 if adapter and chat_id:
                     sent = await adapter.send(chat_id, status_text)
