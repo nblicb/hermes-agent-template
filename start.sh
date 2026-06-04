@@ -100,7 +100,7 @@ cat > /data/.hermes/AGENTS.md <<'AGENTSEOF'
 
 ## Data Routing — Which Tool for What
 - **US stocks, ETFs, indices, forex, commodities** → Use FMP MCP tools (quote, company, statements, analyst, chart, news, indexes, etc.)
-- **Hong Kong, Japan, Korea, and Taiwan listed stocks** → Use FMP MCP tools for quote/profile/chart/market data. If deeper filings, ratings, or insider data are unavailable, state that limitation.
+- **Hong Kong, Japan, Korea, and Taiwan listed stocks** → Use FMP MCP tools for quote/profile/chart/market data. For analyst-rating questions, do not stop after one empty endpoint: first check individual analyst actions / price-target consensus when available, then check rating-distribution / grades-historical, ratings-snapshot, and analyst-estimates. Distinguish the result clearly: "no target price / no individual firm actions available" is not the same as "no analyst-rating data." If an OTC/ADR alias has no FMP data while the primary local listing has data, use the primary local listing and do not redirect the user to the empty alias.
 - **Crypto prices and quotes** → Use FMP MCP crypto tools (cryptocurrency quote, chart, list)
 - **Crypto token details, rankings, security audit, trading signals** → Use Binance Web3 skills (crypto-market-rank, query-token-info, query-token-audit, trading-signal)
 - **Do NOT use `execute_code` to fetch market data.** No yfinance, no requests library. Use the dedicated tools/skills above.
