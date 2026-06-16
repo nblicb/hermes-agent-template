@@ -50,6 +50,9 @@ import datetime
 import contextvars
 import asyncio
 import re
+import json
+import urllib.error
+import urllib.request
 from collections import deque
 
 logger = logging.getLogger("rate_limit")
@@ -85,6 +88,86 @@ _EARNINGS_INTENT_RE = re.compile(
     r"guidance|gross margin|gaap|non-gaap|ebit|capex|free cash flow|fcf)",
     re.IGNORECASE,
 )
+_RICH_BOLD_RE = re.compile(r"(?<!\*)\*([^*\n]{1,180})\*(?!\*)")
+
+
+def _telegram_rich_enabled() -> bool:
+    raw = os.environ.get("TELEGRAM_RICH_MESSAGES_ENABLED", "1")
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+def _telegram_bot_token(adapter) -> str:
+    bot = getattr(adapter, "_bot", None)
+    for target in (bot, adapter):
+        if not target:
+            continue
+        for attr in ("token", "_token"):
+            value = getattr(target, attr, None)
+            if value:
+                return str(value)
+    return os.environ.get("TELEGRAM_BOT_TOKEN", "") or os.environ.get("BOT_TOKEN", "")
+
+
+def _normalize_rich_markdown(text: str) -> str:
+    text = str(text or "")
+    # Existing slash commands use legacy Telegram Markdown where *text*
+    # meant bold. Rich Markdown follows GFM, so preserve that intent.
+    text = _RICH_BOLD_RE.sub(r"**\1**", text)
+    if len(text) > 32768:
+        text = text[:32700].rstrip() + "\n\n..."
+    return text
+
+
+def _post_telegram_rich_markdown(token: str, chat_id, text: str) -> dict:
+    payload = {
+        "chat_id": chat_id,
+        "rich_message": {
+            "markdown": _normalize_rich_markdown(text),
+            "skip_entity_detection": True,
+        },
+    }
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{token}/sendRichMessage",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=12) as resp:
+            raw = resp.read().decode("utf-8")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"HTTP {exc.code}: {body}") from exc
+    data = json.loads(raw)
+    if not data.get("ok"):
+        raise RuntimeError(str(data.get("description") or "sendRichMessage failed")[:240])
+    result = data.get("result")
+    return result if isinstance(result, dict) else {"result": result}
+
+
+def _wrap_telegram_adapter(adapter) -> None:
+    if not adapter or getattr(adapter, "_investlog_rich_send_wrapped", False):
+        return
+    original_send = getattr(adapter, "send", None)
+    if not original_send:
+        return
+
+    async def _rich_send(chat_id, text, *args, **kwargs):
+        token = _telegram_bot_token(adapter)
+        if _telegram_rich_enabled() and token and isinstance(text, str) and text.strip():
+            try:
+                return await asyncio.to_thread(
+                    _post_telegram_rich_markdown,
+                    token,
+                    chat_id,
+                    text,
+                )
+            except Exception as e:
+                logger.debug("Telegram RichMessage fallback: %s", e)
+        return await original_send(chat_id, text, *args, **kwargs)
+
+    adapter.send = _rich_send
+    adapter._investlog_rich_send_wrapped = True
 
 
 def _earnings_analysis_prefix(msg: str) -> str:
@@ -812,6 +895,11 @@ def apply_patch():
             platform = getattr(getattr(event, 'source', None), 'platform', None)
             platform_name = platform.value if platform else "unknown"
             start_ms = time.monotonic()
+            if platform_name == "telegram":
+                try:
+                    _wrap_telegram_adapter(self.adapters.get(platform))
+                except Exception as e:
+                    logger.debug("Telegram RichMessage adapter wrap failed: %s", e)
 
             if uid:
                 uid_str = str(uid)
