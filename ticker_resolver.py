@@ -9,8 +9,9 @@ company before generating.
 Strategy:
 1. POPULAR_TICKERS whitelist (~30 mega-caps): skip injection (0 token).
 2. Lookup in aliases_cn_us.json (~27k rows, ships with image): compact inject.
-3. Fallback: FMP /profile HTTP call with 24h in-memory cache (for new IPOs
-   not yet in the JSON snapshot).
+3. Optional fallback: FMP /profile HTTP call with 24h in-memory cache for new
+   IPOs not yet in the JSON snapshot. Disabled by default; enable with
+   HERMES_FMP_PROFILE_FALLBACK_ENABLED=1 only when bandwidth allows it.
 """
 
 from __future__ import annotations
@@ -573,9 +574,16 @@ def _compact_name(name_en: str) -> str:
 
 # ── FMP fallback ──────────────────────────────────────────────────────────────
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
 def _fmp_profile(ticker: str) -> dict | None:
     """HTTP GET /stable/profile?symbol=X. Returns {name_en, name_zh} or None."""
-    if not _FMP_API_KEY:
+    if not _FMP_API_KEY or not _env_bool("HERMES_FMP_PROFILE_FALLBACK_ENABLED", False):
         return None
     url = (
         f"{_FMP_BASE}/profile?symbol={urllib.parse.quote(ticker)}"
