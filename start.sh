@@ -46,7 +46,9 @@ data_dir: "${HERMES_HOME:-/data/.hermes}"
 EOF
 
 # FMP official hosted MCP (HTTP mode, URL query auth)
-if [ -n "$FMP_API_KEY" ]; then
+FMP_MCP_ENABLED_NORMALIZED="$(echo "${FMP_MCP_ENABLED:-true}" | tr '[:upper:]' '[:lower:]')"
+MCP_SERVERS_WRITTEN=0
+if [ -n "$FMP_API_KEY" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "0" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "false" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "no" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "off" ]; then
   cat >> "$CONFIG" <<EOF
 
 mcp_servers:
@@ -54,14 +56,18 @@ mcp_servers:
     url: "https://financialmodelingprep.com/mcp?apikey=${FMP_API_KEY}"
     timeout: ${HERMES_MCP_TIMEOUT:-45}
 EOF
+  MCP_SERVERS_WRITTEN=1
   echo "[start.sh] FMP MCP server configured (official HTTP endpoint)"
+elif [ -n "$FMP_API_KEY" ]; then
+  echo "[start.sh] FMP MCP server disabled by FMP_MCP_ENABLED"
 fi
 
 # Binance MCP (stdio mode)
 if [ -n "$BINANCE_API_KEY" ]; then
-  if [ -z "$FMP_API_KEY" ]; then
+  if [ "$MCP_SERVERS_WRITTEN" = "0" ]; then
     echo "" >> "$CONFIG"
     echo "mcp_servers:" >> "$CONFIG"
+    MCP_SERVERS_WRITTEN=1
   fi
   cat >> "$CONFIG" <<EOF
   binance:

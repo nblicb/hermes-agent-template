@@ -301,6 +301,13 @@ cfg_lock = asyncio.Lock()
 
 # ── MCP keep-alive + health monitor ───────────────────────────────────────────
 
+def env_enabled(name: str, default: bool = True) -> bool:
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
 async def mcp_keepalive():
     """Keep FMP MCP session alive by triggering a real MCP tool call every 5 min.
 
@@ -319,6 +326,9 @@ async def mcp_keepalive():
     await asyncio.sleep(90)  # Wait for gateway + MCP to initialize
 
     while True:
+        if not env_enabled("MCP_KEEPALIVE_ENABLED", True):
+            print("[mcp-keepalive] disabled by MCP_KEEPALIVE_ENABLED", flush=True)
+            return
         try:
             if gw.state == "running":
                 # Call Hermes API Server with a trivial MCP-triggering prompt.
@@ -632,7 +642,10 @@ async def auto_start():
 @asynccontextmanager
 async def lifespan(app):
     await auto_start()
-    asyncio.create_task(mcp_keepalive())
+    if env_enabled("MCP_KEEPALIVE_ENABLED", True):
+        asyncio.create_task(mcp_keepalive())
+    else:
+        print("[server] MCP keepalive disabled by MCP_KEEPALIVE_ENABLED", flush=True)
     asyncio.create_task(mcp_health_monitor())
     yield
     await gw.stop()
