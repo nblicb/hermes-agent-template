@@ -1,0 +1,132 @@
+import asyncio
+from types import SimpleNamespace
+
+import pytest
+
+import rate_limit
+
+
+class FakeAdapter:
+    def __init__(self):
+        self._bot = SimpleNamespace(token="test-token")
+        self.original_calls = []
+
+    async def send(self, *args, **kwargs):
+        self.original_calls.append((args, kwargs))
+        return SimpleNamespace(success=True, message_id="plain-1")
+
+
+@pytest.fixture(autouse=True)
+def rich_messages_enabled(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_RICH_MESSAGES_ENABLED", "1")
+    monkeypatch.setattr(
+        rate_limit,
+        "_telegram_rich_send_result",
+        lambda result: SimpleNamespace(
+            success=True,
+            message_id=str(result["message_id"]),
+            raw_response=result,
+        ),
+    )
+
+
+@pytest.mark.asyncio
+async def test_rich_wrapper_accepts_hermes_keyword_send_contract(monkeypatch):
+    adapter = FakeAdapter()
+    rich_calls = []
+    monkeypatch.setattr(
+        rate_limit,
+        "_post_telegram_rich_markdown",
+        lambda token, chat_id, text: rich_calls.append((token, chat_id, text))
+        or {"message_id": 42},
+    )
+
+    rate_limit._wrap_telegram_adapter(adapter)
+    result = await adapter.send(
+        chat_id="353559286",
+        content="PLTR earnings result",
+        reply_to="123",
+        metadata={"notify": True},
+    )
+
+    assert result.success is True
+    assert result.message_id == "42"
+    assert rich_calls == [("test-token", "353559286", "PLTR earnings result")]
+    assert adapter.original_calls == []
+
+
+@pytest.mark.asyncio
+async def test_rich_wrapper_accepts_progress_positional_contract(monkeypatch):
+    adapter = FakeAdapter()
+    monkeypatch.setattr(
+        rate_limit,
+        "_post_telegram_rich_markdown",
+        lambda token, chat_id, text: {"message_id": 7},
+    )
+
+    rate_limit._wrap_telegram_adapter(adapter)
+    result = await adapter.send("353559286", "正在查询财报...")
+
+    assert result.success is True
+    assert result.message_id == "7"
+    assert adapter.original_calls == []
+
+
+@pytest.mark.asyncio
+async def test_rich_failure_preserves_exact_original_call(monkeypatch):
+    adapter = FakeAdapter()
+
+    def fail_rich(*_args):
+        raise RuntimeError("rich endpoint unavailable")
+
+    monkeypatch.setattr(rate_limit, "_post_telegram_rich_markdown", fail_rich)
+    rate_limit._wrap_telegram_adapter(adapter)
+    kwargs = {
+        "chat_id": "353559286",
+        "content": "final answer",
+        "reply_to": "123",
+        "metadata": {"notify": True},
+    }
+
+    result = await adapter.send(**kwargs)
+
+    assert result.success is True
+    assert result.message_id == "plain-1"
+    assert adapter.original_calls == [((), kwargs)]
+
+
+@pytest.mark.asyncio
+async def test_handler_failure_still_cancels_and_deletes_progress():
+    deleted = []
+    progress_started = asyncio.Event()
+
+    async def progress():
+        progress_started.set()
+        await asyncio.sleep(60)
+
+    progress_task = asyncio.create_task(progress())
+    await progress_started.wait()
+
+    async def failing_handler(_runner, _event):
+        raise RuntimeError("delivery failed")
+
+    async def delete_message(**kwargs):
+        deleted.append(kwargs)
+
+    adapter = SimpleNamespace(
+        _bot=SimpleNamespace(delete_message=delete_message),
+    )
+
+    with pytest.raises(RuntimeError, match="delivery failed"):
+        await rate_limit._call_with_telegram_progress_cleanup(
+            failing_handler,
+            object(),
+            object(),
+            progress_task=progress_task,
+            adapter=adapter,
+            chat_id="353559286",
+            status_msg_id=99,
+        )
+
+    assert progress_task.cancelled()
+    assert deleted == [{"chat_id": "353559286", "message_id": 99}]

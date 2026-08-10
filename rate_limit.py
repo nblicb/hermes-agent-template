@@ -145,6 +145,18 @@ def _post_telegram_rich_markdown(token: str, chat_id, text: str) -> dict:
     return result if isinstance(result, dict) else {"result": result}
 
 
+def _telegram_rich_send_result(result: dict):
+    """Return the SendResult contract expected by Hermes' send pipeline."""
+    from gateway.platforms.base import SendResult
+
+    message_id = result.get("message_id")
+    return SendResult(
+        success=True,
+        message_id=str(message_id) if message_id is not None else None,
+        raw_response=result,
+    )
+
+
 def _wrap_telegram_adapter(adapter) -> None:
     if not adapter or getattr(adapter, "_investlog_rich_send_wrapped", False):
         return
@@ -152,21 +164,35 @@ def _wrap_telegram_adapter(adapter) -> None:
     if not original_send:
         return
 
-    async def _rich_send(chat_id, text, *args, **kwargs):
+    async def _rich_send(*args, **kwargs):
+        # Hermes calls send() with keyword arguments named ``chat_id`` and
+        # ``content``. InvestLog's command/progress paths also use the older
+        # positional (chat_id, text) form. Preserve both contracts.
+        chat_id = kwargs.get("chat_id")
+        if chat_id is None and args:
+            chat_id = args[0]
+        text = kwargs.get("content")
+        if text is None:
+            text = kwargs.get("text")
+        if text is None and len(args) > 1:
+            text = args[1]
+
         token = _telegram_bot_token(adapter)
         if _telegram_rich_enabled() and token and isinstance(text, str) and text.strip():
             try:
-                return await asyncio.to_thread(
+                result = await asyncio.to_thread(
                     _post_telegram_rich_markdown,
                     token,
                     chat_id,
                     text,
                 )
+                return _telegram_rich_send_result(result)
             except Exception as e:
                 logger.debug("Telegram RichMessage fallback: %s", e)
-        return await original_send(chat_id, text, *args, **kwargs)
+        return await original_send(*args, **kwargs)
 
     adapter.send = _rich_send
+    adapter._investlog_original_send = original_send
     adapter._investlog_rich_send_wrapped = True
 
 
@@ -371,6 +397,39 @@ async def _telegram_progress_loop(adapter, chat_id, message_id, steps: list[tupl
         except Exception as e:
             logger.debug("Failed to edit Telegram status: %s", e)
             return
+
+
+async def _call_with_telegram_progress_cleanup(
+    handler,
+    runner,
+    event,
+    *,
+    progress_task,
+    adapter,
+    chat_id,
+    status_msg_id,
+):
+    """Run the Hermes handler and always remove InvestLog's temporary status."""
+    try:
+        return await handler(runner, event)
+    finally:
+        if progress_task:
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
+            except Exception:
+                pass
+        if status_msg_id:
+            try:
+                if adapter and hasattr(adapter, '_bot') and chat_id:
+                    await adapter._bot.delete_message(
+                        chat_id=chat_id,
+                        message_id=status_msg_id,
+                    )
+            except Exception:
+                pass  # Message may already be gone
 
 
 def check_rate_limit(uid: str, message: str) -> str | None:
@@ -958,6 +1017,8 @@ def apply_patch():
             # Send "querying" status message before agent runs (match user language)
             status_msg_id = None
             progress_task = None
+            chat_id = None
+            adapter = None
             try:
                 chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
                 adapter = self.adapters.get(platform)
@@ -978,26 +1039,29 @@ def apply_patch():
             except Exception:
                 pass
 
-            # Call original handler
-            result = await _original(self, event)
-
-            # Stop progress edits, then delete status message after response.
-            if progress_task:
-                progress_task.cancel()
-                try:
-                    await progress_task
-                except asyncio.CancelledError:
-                    pass
-                except Exception:
-                    pass
-            if status_msg_id:
-                try:
-                    chat_id = getattr(getattr(event, 'source', None), 'chat_id', None)
-                    adapter = self.adapters.get(platform)
-                    if adapter and hasattr(adapter, '_bot') and chat_id:
-                        await adapter._bot.delete_message(chat_id=chat_id, message_id=status_msg_id)
-                except Exception:
-                    pass  # Message may already be gone
+            # Call the original handler. Temporary progress must be cleaned up
+            # even when Hermes raises while producing or delivering a reply.
+            try:
+                result = await _call_with_telegram_progress_cleanup(
+                    _original,
+                    self,
+                    event,
+                    progress_task=progress_task,
+                    adapter=adapter,
+                    chat_id=chat_id,
+                    status_msg_id=status_msg_id,
+                )
+            except Exception as e:
+                if uid:
+                    elapsed = int((time.monotonic() - start_ms) * 1000)
+                    _log_usage(
+                        str(uid),
+                        platform_name,
+                        msg,
+                        elapsed_ms=elapsed,
+                        error=f"{type(e).__name__}: {e}",
+                    )
+                raise
 
             # Log usage after response
             if uid:
