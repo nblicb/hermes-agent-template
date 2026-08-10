@@ -28,6 +28,11 @@ def rich_messages_enabled(monkeypatch):
             raw_response=result,
         ),
     )
+    monkeypatch.setattr(
+        rate_limit,
+        "_telegram_suppressed_send_result",
+        lambda: SimpleNamespace(success=True, message_id=None, raw_response={"suppressed": True}),
+    )
 
 
 @pytest.mark.asyncio
@@ -93,6 +98,58 @@ async def test_rich_failure_preserves_exact_original_call(monkeypatch):
     assert result.success is True
     assert result.message_id == "plain-1"
     assert adapter.original_calls == [((), kwargs)]
+
+
+@pytest.mark.asyncio
+async def test_internal_memory_plan_is_never_delivered(monkeypatch):
+    adapter = FakeAdapter()
+    rich_calls = []
+    monkeypatch.setattr(
+        rate_limit,
+        "_post_telegram_rich_markdown",
+        lambda *args: rich_calls.append(args) or {"message_id": 8},
+    )
+    leaked_plan = (
+        "I need to save the user's shared data tip about accessing earnings "
+        "conference calls via FMP data and MCP to persistent memory for future "
+        "reference, then acknowledge the information for the user."
+    )
+
+    rate_limit._wrap_telegram_adapter(adapter)
+    result = await adapter.send(chat_id="353559286", content=leaked_plan)
+
+    assert result.success is True
+    assert result.message_id is None
+    assert rich_calls == []
+    assert adapter.original_calls == []
+
+
+@pytest.mark.asyncio
+async def test_reasoning_block_is_removed_before_delivery(monkeypatch):
+    adapter = FakeAdapter()
+    rich_calls = []
+    monkeypatch.setattr(
+        rate_limit,
+        "_post_telegram_rich_markdown",
+        lambda token, chat_id, text: rich_calls.append((token, chat_id, text))
+        or {"message_id": 9},
+    )
+
+    rate_limit._wrap_telegram_adapter(adapter)
+    result = await adapter.send(
+        chat_id="353559286",
+        content="<thinking>Need to call a tool.</thinking>美光最新财报如下。",
+    )
+
+    assert result.success is True
+    assert result.message_id == "9"
+    assert rich_calls == [("test-token", "353559286", "美光最新财报如下。")]
+
+
+def test_market_memory_language_is_not_mistaken_for_internal_memory():
+    answer = "Micron memory demand remains above supply, according to management."
+
+    assert rate_limit._sanitize_telegram_output(answer) == answer
 
 
 @pytest.mark.asyncio

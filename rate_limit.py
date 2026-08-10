@@ -89,6 +89,19 @@ _EARNINGS_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 _RICH_BOLD_RE = re.compile(r"(?<!\*)\*([^*\n]{1,180})\*(?!\*)")
+_INTERNAL_BLOCK_RE = re.compile(
+    r"<\s*(?:analysis|thinking|reasoning|tool_call|tool_calls)\b[^>]*>.*?"
+    r"<\s*/\s*(?:analysis|thinking|reasoning|tool_call|tool_calls)\s*>",
+    re.IGNORECASE | re.DOTALL,
+)
+_INTERNAL_PLAN_PATTERNS = (
+    re.compile(r"\bI need to\b", re.IGNORECASE),
+    re.compile(r"\bI should\b", re.IGNORECASE),
+    re.compile(r"\bthe user(?:'s| has| asked| wants| shared)?\b", re.IGNORECASE),
+    re.compile(r"\b(?:persistent memory|save (?:this|the)? ?(?:fact|tip|data)? ?to memory)\b", re.IGNORECASE),
+    re.compile(r"\bthen (?:acknowledge|respond|tell|answer)\b", re.IGNORECASE),
+    re.compile(r"\b(?:call|use|invoke) (?:the )?(?:tool|MCP|API)\b", re.IGNORECASE),
+)
 
 
 def _telegram_rich_enabled() -> bool:
@@ -116,6 +129,22 @@ def _normalize_rich_markdown(text: str) -> str:
     if len(text) > 32768:
         text = text[:32700].rstrip() + "\n\n..."
     return text
+
+
+def _sanitize_telegram_output(text: str) -> str:
+    """Remove private reasoning and suppress standalone internal plans.
+
+    Hermes can emit an intermediate assistant message before a memory/tool call.
+    Telegram is a user-facing transport, so enforce the boundary here even if a
+    provider or agent regression marks that intermediate text as sendable.
+    """
+    cleaned = _INTERNAL_BLOCK_RE.sub("", str(text or "")).strip()
+    if not cleaned:
+        return ""
+    plan_markers = sum(bool(pattern.search(cleaned)) for pattern in _INTERNAL_PLAN_PATTERNS)
+    if plan_markers >= 2:
+        return ""
+    return cleaned
 
 
 def _post_telegram_rich_markdown(token: str, chat_id, text: str) -> dict:
@@ -157,6 +186,13 @@ def _telegram_rich_send_result(result: dict):
     )
 
 
+def _telegram_suppressed_send_result():
+    """A successful no-op result for output blocked by the privacy boundary."""
+    from gateway.platforms.base import SendResult
+
+    return SendResult(success=True, message_id=None, raw_response={"suppressed": True})
+
+
 def _wrap_telegram_adapter(adapter) -> None:
     if not adapter or getattr(adapter, "_investlog_rich_send_wrapped", False):
         return
@@ -176,6 +212,20 @@ def _wrap_telegram_adapter(adapter) -> None:
             text = kwargs.get("text")
         if text is None and len(args) > 1:
             text = args[1]
+
+        if isinstance(text, str):
+            sanitized = _sanitize_telegram_output(text)
+            if not sanitized:
+                logger.warning("Suppressed private/internal Telegram output")
+                return _telegram_suppressed_send_result()
+            if sanitized != text:
+                text = sanitized
+                if "content" in kwargs:
+                    kwargs["content"] = text
+                elif "text" in kwargs:
+                    kwargs["text"] = text
+                elif len(args) > 1:
+                    args = (args[0], text, *args[2:])
 
         token = _telegram_bot_token(adapter)
         if _telegram_rich_enabled() and token and isinstance(text, str) and text.strip():

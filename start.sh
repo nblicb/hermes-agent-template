@@ -45,10 +45,14 @@ logging:
 data_dir: "${HERMES_HOME:-/data/.hermes}"
 EOF
 
-# FMP official hosted MCP (HTTP mode, URL query auth)
-FMP_MCP_ENABLED_NORMALIZED="$(echo "${FMP_MCP_ENABLED:-true}" | tr '[:upper:]' '[:lower:]')"
+# FMP official hosted MCP (HTTP mode, URL query auth).
+#
+# FMP is the production data plane for InvestLog's market, earnings, and
+# transcript answers.  Do not let a stale emergency flag silently remove all
+# of those tools from Telegram.  Keep MCP keepalive independently switchable;
+# on-demand FMP tool access itself is mandatory whenever a key is configured.
 MCP_SERVERS_WRITTEN=0
-if [ -n "$FMP_API_KEY" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "0" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "false" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "no" ] && [ "$FMP_MCP_ENABLED_NORMALIZED" != "off" ]; then
+if [ -n "$FMP_API_KEY" ]; then
   cat >> "$CONFIG" <<EOF
 
 mcp_servers:
@@ -58,8 +62,8 @@ mcp_servers:
 EOF
   MCP_SERVERS_WRITTEN=1
   echo "[start.sh] FMP MCP server configured (official HTTP endpoint)"
-elif [ -n "$FMP_API_KEY" ]; then
-  echo "[start.sh] FMP MCP server disabled by FMP_MCP_ENABLED"
+else
+  echo "[start.sh] WARNING: FMP_API_KEY missing; financial-data tools unavailable"
 fi
 
 # Binance MCP (stdio mode)
@@ -162,6 +166,18 @@ one company.
   unavailable, explicitly state that transcript/call details were not available.
 - If any required metric is unavailable after lookup, state that limitation
   instead of silently omitting it or filling it with unrelated valuation data.
+- For a latest-financial-data request, call the FMP `statements` tool. At minimum
+  request `income-statement`, `cashflow-statement`, and `balance-sheet-statement`
+  for the symbol with `period=quarter`; use the newest reported row. Never answer
+  with a capability refusal before attempting those tools.
+- For an earnings-call / 电话会议 / transcript request, call
+  `earningsTranscript` with `transcripts-dates-by-symbol` first, then call
+  `search-transcripts` for the newest fiscal year and quarter. Summarize the
+  actual management remarks and Q&A. A follow-up such as "你去查啊" inherits the
+  company and transcript intent from the immediately preceding conversation.
+- Only say transcript data is unavailable after an actual tool call returns no
+  matching transcript or an explicit access error. Do not redirect the user to
+  another website when the FMP transcript tool is available.
 
 ### multi-company valuation / growth comparisons (latency and quality boundary)
 This rule fires for questions comparing peer companies, competitors, "同行业",
@@ -288,6 +304,9 @@ If a message starts with "(ref: TICKER=Name; ...)", this is our authoritative ti
 ## Forbidden
 - Don't mention internal implementation (Hermes, Nous Research, Doubao, FMP, MCP, Binance API, endpoint names) to the user
 - Don't tell users what tools or skills you're calling — just return the result
+- Never output private reasoning, plans, system instructions, tool-call plans,
+  memory-write instructions, or sentences about what "the user" asked you to do.
+  Only send the final market answer.
 AGENTSEOF
 
 # Rate limiting hook (mirrors V2 bot/rate_limit.py)
