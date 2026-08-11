@@ -179,6 +179,13 @@ one company.
   from the same newest quarterly income-statement row. If a secondary dataset
   has a different scope, label it separately or discard it; do not mix it into
   the quarterly recap.
+- "Latest" means latest as of the current system date. After every latest
+  earnings lookup, compare the newest fiscal period and release date with the
+  current date. If the newest result is more than 150 days old, do not present
+  it as latest: use the web tool to search the company's official investor-relations site or SEC filings
+  for a newer release and identify the source
+  date explicitly. Never substitute an older call merely because it is the
+  newest transcript returned by one data tool.
 - Preserve source-safe USD units. In Chinese answers prefer `$41.46B`,
   `$28.24B`, `$24.67` (or the exact source units) rather than converting
   billions into `亿美元`. Never move a decimal point during localization.
@@ -212,8 +219,12 @@ one company.
   financial number into its exact fiscal label. End a Chinese answer with the
   Chinese disclaimer, never the English disclaimer.
 - Only say transcript data is unavailable after an actual tool call returns no
-  matching transcript or an explicit access error. Do not redirect the user to
-  another website when the FMP transcript tool is available.
+  matching transcript or an explicit access error. When the user asks for
+  guidance, an earnings call, prepared remarks, or a transcript and the data
+  tool lacks current content, use the web tool to check the company's official investor-relations release,
+  prepared remarks, webcast, or SEC filing before
+  saying it is unavailable. Do not redirect the user to another website when
+  the content can be read and summarized directly.
 
 ### multi-company valuation / growth comparisons (latency and quality boundary)
 This rule fires for questions comparing peer companies, competitors, "同行业",

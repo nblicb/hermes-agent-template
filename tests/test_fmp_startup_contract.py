@@ -44,6 +44,16 @@ def test_transcript_numbers_preserve_period_and_language_contract():
     assert "Keep reported-quarter actuals, forward guidance" in start_script
     assert "call the quarterly statements for the matching period" in start_script
     assert "Every earnings-call answer must use this order" in start_script
+
+
+def test_latest_earnings_falls_back_to_official_sources_when_tool_data_is_stale():
+    start_script = (Path(__file__).parents[1] / "start.sh").read_text()
+
+    assert '"Latest" means latest as of the current system date' in start_script
+    assert "more than 150 days old" in start_script
+    assert "official investor-relations site or SEC filings" in start_script
+    assert "official investor-relations release" in start_script
+    assert "prepared remarks, webcast, or SEC filing" in start_script
     assert "reported fiscal-quarter actuals" in start_script
     assert "full-year" in start_script
     assert "cumulative amounts and period-end balances" in start_script
