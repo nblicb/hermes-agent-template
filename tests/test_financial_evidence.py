@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import financial_evidence
 from financial_evidence import build_latest_financial_evidence_prefix
 from rate_limit import _inject_reference_prefix
@@ -89,3 +91,8 @@ def test_shared_message_injection_is_idempotent(monkeypatch):
     assert first.count("(latest-financial-evidence:") == 1
     assert second.count("(earnings-analysis-guide:") == 1
     assert second.count("(latest-financial-evidence:") == 1
+
+
+def test_financial_evidence_module_is_copied_into_production_image():
+    dockerfile = Path(__file__).resolve().parents[1] / "Dockerfile"
+    assert "COPY financial_evidence.py /app/financial_evidence.py" in dockerfile.read_text()

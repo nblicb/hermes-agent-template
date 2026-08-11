@@ -22,6 +22,7 @@ COPY server.py /app/server.py
 COPY rate_limit.py /app/rate_limit.py
 COPY commands.py /app/commands.py
 COPY ticker_resolver.py /app/ticker_resolver.py
+COPY financial_evidence.py /app/financial_evidence.py
 COPY asr.py /app/asr.py
 COPY gateway_wrapper.py /app/gateway_wrapper.py
 COPY templates/ /app/templates/
