@@ -43,3 +43,9 @@ def test_transcript_numbers_preserve_period_and_language_contract():
     assert "`FQ3 actual`, `FQ4 guidance`, `FY2026 plan`" in start_script
     assert "Keep reported-quarter actuals, forward guidance" in start_script
     assert "call the quarterly statements for the matching period" in start_script
+    assert "Every earnings-call answer must use this order" in start_script
+    assert "reported fiscal-quarter actuals" in start_script
+    assert "full-year" in start_script
+    assert "cumulative amounts and period-end balances" in start_script
+    assert "Before sending, scan the draft" in start_script
+    assert "Chinese disclaimer, never the English disclaimer" in start_script
