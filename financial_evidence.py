@@ -125,6 +125,25 @@ def _response_language_guard(message: str) -> str:
     return ""
 
 
+def _period_comparison_guard(fiscal_year: str, period: str) -> str:
+    match = re.fullmatch(r"Q([1-4])", period, re.IGNORECASE)
+    if not match or not fiscal_year.isdigit():
+        return ""
+    quarter = int(match.group(1))
+    year = int(fiscal_year)
+    if quarter == 1:
+        prior_year, prior_quarter = year - 1, 4
+    else:
+        prior_year, prior_quarter = year, quarter - 1
+    return (
+        "(period-label-guard: Use these exact fiscal labels for comparisons; "
+        f"reportedQuarter=FY{year} Q{quarter}; "
+        f"sequentialComparisonQuarter=FY{prior_year} Q{prior_quarter}; "
+        f"yearOverYearComparisonQuarter=FY{year - 1} Q{quarter}. "
+        "Never infer or rewrite these fiscal-year labels.)\n"
+    )
+
+
 def _money(value, currency: str) -> str:
     try:
         number = float(value)
@@ -213,7 +232,7 @@ def build_latest_financial_evidence_prefix(
             f"quarter FY{fiscal_year} {period} was returned. Do not summarize or "
             "substitute any older earnings call; answer from the matching official "
             "release/prepared remarks or state the limitation.)\n"
-        ) + _response_language_guard(message)
+        ) + _period_comparison_guard(str(fiscal_year), str(period)) + _response_language_guard(message)
     transcript_period = transcript.get("period") or period
     transcript_year = transcript.get("year") or fiscal_year
     transcript_date = transcript.get("date") or "unknown"
@@ -222,4 +241,4 @@ def build_latest_financial_evidence_prefix(
         f"symbol={symbol}; matchingQuarter=FY{transcript_year} {transcript_period}; "
         f"callDate={transcript_date}; transcriptContent={_transcript_excerpt(content)}. "
         "Use this matching transcript, not any older call.)\n"
-    ) + _response_language_guard(message)
+    ) + _period_comparison_guard(str(fiscal_year), str(period)) + _response_language_guard(message)
