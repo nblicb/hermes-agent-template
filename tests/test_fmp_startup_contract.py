@@ -27,3 +27,15 @@ def test_latest_financial_data_cannot_mix_ttm_with_quarterly_statements():
     assert "Never label TTM key" in start_script
     assert "same newest quarterly income-statement row" in start_script
     assert "Never move a decimal point during localization" in start_script
+
+
+def test_transcript_numbers_preserve_period_and_language_contract():
+    start_script = (Path(__file__).parents[1] / "start.sh").read_text()
+
+    assert 'Match the user\'s language' in start_script
+    assert 'Chinese: "以上内容仅供参考，不构成投资建议。"' in start_script
+    assert "Preserve the source's time scope for every transcript number" in start_script
+    assert 'Never rewrite' in start_script
+    assert 'as "this quarter"' in start_script
+    assert "Cross-check transcript claims" in start_script
+    assert "matching quarterly" in start_script

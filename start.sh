@@ -187,6 +187,12 @@ one company.
   `search-transcripts` for the newest fiscal year and quarter. Summarize the
   actual management remarks and Q&A. A follow-up such as "你去查啊" inherits the
   company and transcript intent from the immediately preceding conversation.
+- Preserve the source's time scope for every transcript number. Never rewrite
+  "past two quarters", year-to-date, annual, cumulative, guidance, or an ending
+  balance as "this quarter". Cross-check transcript claims about revenue, cash
+  flow, capex, cash, net income, or EPS against the matching quarterly
+  statements; if the scopes differ, label both periods explicitly instead of
+  merging them.
 - Only say transcript data is unavailable after an actual tool call returns no
   matching transcript or an explicit access error. Do not redirect the user to
   another website when the FMP transcript tool is available.
