@@ -20,8 +20,9 @@ _FINANCIAL_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 _LATEST_RE = re.compile(r"(最新|最近|当前|當前|latest|current|most recent)", re.IGNORECASE)
-_CALL_INTENT_RE = re.compile(
-    r"(电话会|電話會|法说会|法說會|业绩会|業績會|transcript|conference call|earnings call)",
+_TRANSCRIPT_CONTEXT_RE = re.compile(
+    r"(电话会|電話會|法说会|法說會|业绩会|業績會|指引|展望|"
+    r"transcript|conference call|earnings call|guidance|outlook)",
     re.IGNORECASE,
 )
 _EXPLICIT_PERIOD_RE = re.compile(
@@ -107,7 +108,7 @@ def _transcript_excerpt(content: str) -> str:
     compact = re.sub(r"\s+", " ", content or "").strip()
     if len(compact) <= _TRANSCRIPT_EXCERPT_CHARS:
         return compact
-    prepared_chars = 18_000
+    prepared_chars = 22_000
     qa_chars = _TRANSCRIPT_EXCERPT_CHARS - prepared_chars
     return (
         compact[:prepared_chars]
@@ -131,16 +132,32 @@ def _period_comparison_guard(fiscal_year: str, period: str) -> str:
         return ""
     quarter = int(match.group(1))
     year = int(fiscal_year)
+
+    def shifted(offset: int) -> tuple[int, int]:
+        zero_based = (year * 4) + (quarter - 1) + offset
+        shifted_year, shifted_quarter = divmod(zero_based, 4)
+        return shifted_year, shifted_quarter + 1
+
     if quarter == 1:
         prior_year, prior_quarter = year - 1, 4
     else:
         prior_year, prior_quarter = year, quarter - 1
+    next_year, next_quarter = shifted(1)
+    second_year, second_quarter = shifted(2)
+    third_year, third_quarter = shifted(3)
+    fourth_year, fourth_quarter = shifted(4)
     return (
         "(period-label-guard: Use these exact fiscal labels for comparisons; "
         f"reportedQuarter=FY{year} Q{quarter}; "
         f"sequentialComparisonQuarter=FY{prior_year} Q{prior_quarter}; "
         f"yearOverYearComparisonQuarter=FY{year - 1} Q{quarter}. "
-        "Never infer or rewrite these fiscal-year labels.)\n"
+        "For forward guidance and roadmap references relative to this call: "
+        f"nextQuarter=FY{next_year} Q{next_quarter}; "
+        f"twoQuartersAhead=FY{second_year} Q{second_quarter}; "
+        f"threeQuartersAhead=FY{third_year} Q{third_quarter}; "
+        f"fourQuartersAhead=FY{fourth_year} Q{fourth_quarter}. "
+        "Never emit a bare Q1/Q2/Q3/Q4 for a financial number or roadmap; "
+        "always attach the exact fiscal year.)\n"
     )
 
 
@@ -199,7 +216,9 @@ def build_latest_financial_evidence_prefix(
         f"reportingCurrency={currency}; revenue={_money(row.get('revenue'), currency)}; "
         f"grossProfit={_money(row.get('grossProfit'), currency)}; "
         f"operatingIncome={_money(row.get('operatingIncome'), currency)}; "
-        f"netIncome={_money(row.get('netIncome'), currency)}; dilutedEPS={diluted_eps}"
+        f"netIncome={_money(row.get('netIncome'), currency)}; dilutedEPS={diluted_eps} "
+        "(statement-provider value; if the matching transcript or official issuer "
+        "release differs, the issuer value wins)"
     )
     financial_prefix = (
         "(latest-financial-evidence: Deterministic current quarterly statement anchor; "
@@ -208,8 +227,7 @@ def build_latest_financial_evidence_prefix(
         "release/prepared remarks; if unavailable, state that limitation without substituting "
         "an older call.)\n"
     )
-    if not _CALL_INTENT_RE.search(message):
-        return financial_prefix
+    requires_transcript_context = bool(_TRANSCRIPT_CONTEXT_RE.search(message))
     if "(latest-call-evidence:" in message[:40_000]:
         return financial_prefix
 
@@ -227,6 +245,8 @@ def build_latest_financial_evidence_prefix(
         transcript = None
     content = str((transcript or {}).get("content") or "").strip()
     if not content:
+        if not requires_transcript_context:
+            return financial_prefix
         return financial_prefix + (
             "(latest-call-evidence: No transcript matching the deterministic latest "
             f"quarter FY{fiscal_year} {period} was returned. Do not summarize or "

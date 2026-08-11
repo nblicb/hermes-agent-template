@@ -27,6 +27,26 @@ NVDA_TRANSCRIPT = {
         "was $75 billion. Jen-Hsun Huang: Agentic AI demand has gone parabolic."
     ),
 }
+TSM_ROW = {
+    **NVDA_ROW,
+    "date": "2026-06-30",
+    "fiscalYear": "2026",
+    "period": "Q2",
+    "reportedCurrency": "TWD",
+    "revenue": 1_270_381_000_000,
+    "epsDiluted": 136.25,
+}
+TSM_TRANSCRIPT = {
+    "symbol": "TSM",
+    "period": "Q2",
+    "year": 2026,
+    "date": "2026-07-16",
+    "content": (
+        "Wendell Huang: For third quarter 2026, revenue is expected between "
+        "$44.6 billion and $45.8 billion. Gross margin is expected between "
+        "65% and 67%, and operating margin between 56% and 58%."
+    ),
+}
 
 
 def test_resolves_popular_chinese_company_name_for_evidence_routing():
@@ -55,6 +75,10 @@ def test_latest_call_gets_deterministic_current_quarter_anchor():
     assert "Total revenue was $82 billion" in prefix
     assert "sequentialComparisonQuarter=FY2026 Q4" in prefix
     assert "yearOverYearComparisonQuarter=FY2026 Q1" in prefix
+    assert "nextQuarter=FY2027 Q2" in prefix
+    assert "twoQuartersAhead=FY2027 Q3" in prefix
+    assert "threeQuartersAhead=FY2027 Q4" in prefix
+    assert "fourQuartersAhead=FY2028 Q1" in prefix
     assert "最终答案必须使用中文" in prefix
 
 
@@ -67,21 +91,62 @@ def test_explicit_historical_period_does_not_get_latest_anchor():
 
 
 def test_non_us_statement_preserves_currency_and_rejects_adr_eps_as_issuer_eps():
-    row = {
-        **NVDA_ROW,
-        "reportedCurrency": "TWD",
-        "revenue": 1_270_381_000_000,
-        "epsDiluted": 136.25,
-    }
     prefix = build_latest_financial_evidence_prefix(
         "TSM latest financials",
         api_key="test-key",
-        fetcher=lambda _symbol, _key: row,
+        fetcher=lambda _symbol, _key: TSM_ROW,
+        transcript_fetcher=lambda _symbol, _year, _quarter, _key: None,
     )
     assert "reportingCurrency=TWD" in prefix
     assert "revenue=TWD 1270.381B" in prefix
     assert "ADR-equivalent EPS" in prefix
     assert "dilutedEPS=136.25" not in prefix
+
+
+def test_matching_transcript_can_correct_statement_provider_eps():
+    row = {
+        **NVDA_ROW,
+        "date": "2026-06-27",
+        "fiscalYear": "2026",
+        "period": "Q3",
+        "revenue": 109_417_000_000,
+        "epsDiluted": 2.03,
+    }
+    transcript = {
+        "symbol": "AAPL",
+        "period": "Q3",
+        "year": 2026,
+        "date": "2026-07-30",
+        "content": "Diluted earnings per share was $2.02, up 29% year-over-year.",
+    }
+    prefix = build_latest_financial_evidence_prefix(
+        "苹果最新财务数据如何？",
+        api_key="test-key",
+        fetcher=lambda symbol, _key: row if symbol == "AAPL" else None,
+        transcript_fetcher=lambda symbol, year, quarter, _key: (
+            transcript if (symbol, year, quarter) == ("AAPL", "2026", 3) else None
+        ),
+    )
+    assert "dilutedEPS=2.03 (statement-provider value" in prefix
+    assert "the issuer value wins" in prefix
+    assert "Diluted earnings per share was $2.02" in prefix
+
+
+def test_guidance_question_prefetches_matching_transcript_context():
+    prefix = build_latest_financial_evidence_prefix(
+        "台积电最新财务数据和下一季度指引是什么？",
+        api_key="test-key",
+        fetcher=lambda symbol, _key: TSM_ROW if symbol == "TSM" else None,
+        transcript_fetcher=lambda symbol, year, quarter, _key: (
+            TSM_TRANSCRIPT
+            if (symbol, year, quarter) == ("TSM", "2026", 2)
+            else None
+        ),
+    )
+    assert "matchingQuarter=FY2026 Q2" in prefix
+    assert "$44.6 billion and $45.8 billion" in prefix
+    assert "65% and 67%" in prefix
+    assert "nextQuarter=FY2026 Q3" in prefix
 
 
 def test_existing_evidence_is_not_injected_twice():
