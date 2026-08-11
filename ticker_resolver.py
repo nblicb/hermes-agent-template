@@ -544,6 +544,9 @@ def _load_aliases() -> None:
 
 
 _load_aliases()
+_STOCK_ALIAS_ITEMS_SORTED = tuple(
+    sorted(_alias_to_ticker.items(), key=lambda item: len(item[0]), reverse=True)
+)
 
 
 # ── Name compaction ───────────────────────────────────────────────────────────
@@ -760,6 +763,27 @@ def _matched_stock_alias_refs(text: str) -> list[tuple[str, str]]:
     return refs
 
 
+def _matched_stock_alias_tickers(text: str) -> list[str]:
+    """Resolve company names inside a natural-language query, including mega-caps."""
+    tickers: list[str] = []
+    seen: set[str] = set()
+    for alias, ticker in _STOCK_ALIAS_ITEMS_SORTED:
+        if ticker in seen:
+            continue
+        # Avoid one-character CJK names and tiny English fragments in prose.
+        compact_alias = _compact_alias_key(alias)
+        if (not alias.isascii() and len(compact_alias) < 2) or (
+            alias.isascii() and len(compact_alias) < 4
+        ):
+            continue
+        if _alias_in_text(text, alias):
+            seen.add(ticker)
+            tickers.append(ticker)
+            if len(tickers) >= _MAX_REF_COUNT:
+                break
+    return tickers
+
+
 def _matched_crypto_refs(text: str) -> list[tuple[str, str]]:
     text_key = _alias_key(text)
     compact_text = _compact_alias_key(text)
@@ -880,6 +904,35 @@ def resolve_and_inject(msg: str) -> str:
     if not refs:
         return ""
     return f"(ref: {'; '.join(refs)})\n"
+
+
+def resolve_query_tickers(msg: str) -> list[str]:
+    """Resolve ticker symbols for routing without omitting popular companies."""
+    if not msg:
+        return []
+    resolved: list[str] = []
+    seen: set[str] = set()
+
+    def add(ticker: str) -> None:
+        normalized = ticker.upper()
+        if normalized not in seen and len(resolved) < _MAX_REF_COUNT:
+            seen.add(normalized)
+            resolved.append(normalized)
+
+    name_tickers = _matched_stock_alias_tickers(msg)
+    for ticker in name_tickers:
+        add(ticker)
+    if not name_tickers:
+        for ticker, _name in _matched_name_refs(msg):
+            add(ticker)
+    for ticker in extract_tickers(msg):
+        # The strict uppercase extractor intentionally accepts unknown symbols.
+        # Freshness evidence is narrower: only call FMP for known/listed assets.
+        if ticker in _by_ticker or ticker in _CRYPTO_CATALOG or re.match(
+            r"^(?:\d{4}\.(?:TWO|TW|HK|T)|\d{6}\.(?:KS|KQ))$", ticker
+        ):
+            add(ticker)
+    return resolved
 
 
 if __name__ == "__main__":

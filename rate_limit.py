@@ -84,8 +84,9 @@ _hermes_user_id_var: contextvars.ContextVar = contextvars.ContextVar(
 )
 
 _EARNINGS_INTENT_RE = re.compile(
-    r"(财报|业绩|营收|利润|毛利|指引|盘前|盘后|earnings|revenue|eps|"
-    r"guidance|gross margin|gaap|non-gaap|ebit|capex|free cash flow|fcf)",
+    r"(财报|財報|财务|財務|业绩|業績|营收|利润|毛利|指引|电话会|電話會|"
+    r"盘前|盘后|earnings|financial|revenue|eps|guidance|transcript|"
+    r"conference call|gross margin|gaap|non-gaap|ebit|capex|free cash flow|fcf)",
     re.IGNORECASE,
 )
 _RICH_BOLD_RE = re.compile(r"(?<!\*)\*([^*\n]{1,180})\*(?!\*)")
@@ -250,7 +251,7 @@ def _earnings_analysis_prefix(msg: str) -> str:
     """Compact guidance for earnings questions across Telegram and API server."""
     if not isinstance(msg, str) or not _EARNINGS_INTENT_RE.search(msg):
         return ""
-    if msg.lstrip().startswith("(earnings-analysis-guide:"):
+    if "(earnings-analysis-guide:" in msg[:2000]:
         return ""
     return (
         "(earnings-analysis-guide: For earnings questions, separate calendar preview, "
@@ -856,7 +857,9 @@ def _apply_api_server_user_id_patch():
         ):
             loop = asyncio.get_running_loop()
             user_id = _hermes_user_id_var.get()
-            resolved_user_message = _inject_reference_prefix(user_message)
+            resolved_user_message = await asyncio.to_thread(
+                _inject_reference_prefix, user_message
+            )
 
             def _run():
                 agent = self._create_agent(
@@ -976,12 +979,18 @@ def _inject_reference_prefix(msg):
         except Exception as e:
             logger.debug("Fund resolver error: %s", e)
 
-    if not prefixes:
-        earnings_prefix = _earnings_analysis_prefix(msg)
-        return earnings_prefix + msg if earnings_prefix else msg
     earnings_prefix = _earnings_analysis_prefix(msg)
     if earnings_prefix:
         prefixes.append(earnings_prefix)
+    try:
+        from financial_evidence import build_latest_financial_evidence_prefix
+        financial_prefix = build_latest_financial_evidence_prefix(msg)
+        if financial_prefix:
+            prefixes.append(financial_prefix)
+    except Exception as e:
+        logger.debug("Latest financial evidence error: %s", e)
+    if not prefixes:
+        return msg
     return "".join(prefixes) + msg
 
 
@@ -1056,7 +1065,7 @@ def apply_patch():
                     return None
 
             # Keep Telegram and API-server entrypoints aligned on ticker/fund refs.
-            injected_msg = _inject_reference_prefix(msg)
+            injected_msg = await asyncio.to_thread(_inject_reference_prefix, msg)
             if injected_msg != msg:
                 try:
                     event.text = injected_msg
