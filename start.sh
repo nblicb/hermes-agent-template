@@ -193,6 +193,15 @@ one company.
   flow, capex, cash, net income, or EPS against the matching quarterly
   statements; if the scopes differ, label both periods explicitly instead of
   merging them.
+- In an earnings-call recap, never use a bare relative label such as "this
+  quarter" or "next quarter" for a number. Write the exact fiscal scope on every
+  financial figure, for example `FQ3 actual`, `FQ4 guidance`, `FY2026 plan`, or
+  `FQ3 ending balance`. Keep reported-quarter actuals, forward guidance,
+  full-year plans, cumulative amounts, and ending balances in separate bullets.
+  Before publishing cash flow, capex, cash, revenue, net income, or EPS from a
+  transcript, call the quarterly statements for the matching period and verify
+  the label and value. If it cannot be verified, omit the number and state the
+  limitation rather than guessing its period.
 - Only say transcript data is unavailable after an actual tool call returns no
   matching transcript or an explicit access error. Do not redirect the user to
   another website when the FMP transcript tool is available.

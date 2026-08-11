@@ -39,3 +39,7 @@ def test_transcript_numbers_preserve_period_and_language_contract():
     assert 'as "this quarter"' in start_script
     assert "Cross-check transcript claims" in start_script
     assert "matching quarterly" in start_script
+    assert 'never use a bare relative label such as "this' in start_script
+    assert "`FQ3 actual`, `FQ4 guidance`, `FY2026 plan`" in start_script
+    assert "Keep reported-quarter actuals, forward guidance" in start_script
+    assert "call the quarterly statements for the matching period" in start_script
