@@ -17,6 +17,16 @@ NVDA_ROW = {
     "epsDiluted": 2.39,
     "reportedCurrency": "USD",
 }
+NVDA_TRANSCRIPT = {
+    "symbol": "NVDA",
+    "period": "Q1",
+    "year": 2027,
+    "date": "2026-05-20",
+    "content": (
+        "Colette Kress: Total revenue was $82 billion and data center revenue "
+        "was $75 billion. Jen-Hsun Huang: Agentic AI demand has gone parabolic."
+    ),
+}
 
 
 def test_resolves_popular_chinese_company_name_for_evidence_routing():
@@ -28,6 +38,11 @@ def test_latest_call_gets_deterministic_current_quarter_anchor():
         "英伟达最新财报电话会议讲了什么？",
         api_key="test-key",
         fetcher=lambda symbol, _key: NVDA_ROW if symbol == "NVDA" else None,
+        transcript_fetcher=lambda symbol, year, quarter, _key: (
+            NVDA_TRANSCRIPT
+            if (symbol, year, quarter) == ("NVDA", "2027", 1)
+            else None
+        ),
     )
 
     assert "latestQuarter=FY2027 Q1" in prefix
@@ -35,6 +50,9 @@ def test_latest_call_gets_deterministic_current_quarter_anchor():
     assert "revenue=$81.615B" in prefix
     assert "dilutedEPS=2.39" in prefix
     assert "Never label any earnings release or call older than periodEnd as latest" in prefix
+    assert "matchingQuarter=FY2027 Q1" in prefix
+    assert "callDate=2026-05-20" in prefix
+    assert "Total revenue was $82 billion" in prefix
 
 
 def test_explicit_historical_period_does_not_get_latest_anchor():
@@ -76,6 +94,17 @@ def test_existing_evidence_is_not_injected_twice():
     ) == ""
 
 
+def test_missing_matching_transcript_explicitly_forbids_older_call_fallback():
+    prefix = build_latest_financial_evidence_prefix(
+        "NVDA latest earnings call",
+        api_key="test-key",
+        fetcher=lambda _symbol, _key: NVDA_ROW,
+        transcript_fetcher=lambda _symbol, _year, _quarter, _key: None,
+    )
+    assert "No transcript matching" in prefix
+    assert "Do not summarize or substitute any older earnings call" in prefix
+
+
 def test_shared_message_injection_is_idempotent(monkeypatch):
     monkeypatch.setenv("FMP_API_KEY", "test-key")
     monkeypatch.setattr(
@@ -83,14 +112,25 @@ def test_shared_message_injection_is_idempotent(monkeypatch):
         "_fetch_latest_income_statement",
         lambda symbol, _key: NVDA_ROW if symbol == "NVDA" else None,
     )
+    monkeypatch.setattr(
+        financial_evidence,
+        "_fetch_matching_transcript",
+        lambda symbol, year, quarter, _key: (
+            NVDA_TRANSCRIPT
+            if (symbol, year, quarter) == ("NVDA", "2027", 1)
+            else None
+        ),
+    )
 
     first = _inject_reference_prefix("英伟达最新财报电话会议讲了什么？")
     second = _inject_reference_prefix(first)
 
     assert first.count("(earnings-analysis-guide:") == 1
     assert first.count("(latest-financial-evidence:") == 1
+    assert first.count("(latest-call-evidence:") == 1
     assert second.count("(earnings-analysis-guide:") == 1
     assert second.count("(latest-financial-evidence:") == 1
+    assert second.count("(latest-call-evidence:") == 1
 
 
 def test_financial_evidence_module_is_copied_into_production_image():

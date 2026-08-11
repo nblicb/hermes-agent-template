@@ -20,13 +20,19 @@ _FINANCIAL_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 _LATEST_RE = re.compile(r"(最新|最近|当前|當前|latest|current|most recent)", re.IGNORECASE)
+_CALL_INTENT_RE = re.compile(
+    r"(电话会|電話會|法说会|法說會|业绩会|業績會|transcript|conference call|earnings call)",
+    re.IGNORECASE,
+)
 _EXPLICIT_PERIOD_RE = re.compile(
     r"(?:20\d{2}|FY\s*\d{2,4}|F?Q[1-4]|第[一二三四1234]季度)",
     re.IGNORECASE,
 )
 _CACHE_TTL_SECONDS = 300
 _cache: dict[str, tuple[float, dict]] = {}
+_transcript_cache: dict[tuple[str, str, int], tuple[float, dict | None]] = {}
 _cache_lock = threading.Lock()
+_TRANSCRIPT_EXCERPT_CHARS = 30_000
 
 
 def _is_latest_financial_question(message: str) -> bool:
@@ -63,6 +69,53 @@ def _fetch_latest_income_statement(symbol: str, api_key: str) -> dict | None:
     return row
 
 
+def _fetch_matching_transcript(
+    symbol: str,
+    fiscal_year: str,
+    quarter: int,
+    api_key: str,
+) -> dict | None:
+    cache_key = (symbol, fiscal_year, quarter)
+    with _cache_lock:
+        cached = _transcript_cache.get(cache_key)
+        if cached and time.monotonic() - cached[0] < _CACHE_TTL_SECONDS:
+            return cached[1]
+
+    query = urllib.parse.urlencode({
+        "symbol": symbol,
+        "year": fiscal_year,
+        "quarter": quarter,
+        "apikey": api_key,
+    })
+    request = urllib.request.Request(
+        f"https://financialmodelingprep.com/stable/earning-call-transcript?{query}",
+        headers={"User-Agent": "InvestLog-Hermes/1.0"},
+    )
+    with urllib.request.urlopen(request, timeout=10) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    row = (
+        payload[0]
+        if isinstance(payload, list) and payload and isinstance(payload[0], dict)
+        else None
+    )
+    with _cache_lock:
+        _transcript_cache[cache_key] = (time.monotonic(), row)
+    return row
+
+
+def _transcript_excerpt(content: str) -> str:
+    compact = re.sub(r"\s+", " ", content or "").strip()
+    if len(compact) <= _TRANSCRIPT_EXCERPT_CHARS:
+        return compact
+    prepared_chars = 18_000
+    qa_chars = _TRANSCRIPT_EXCERPT_CHARS - prepared_chars
+    return (
+        compact[:prepared_chars]
+        + " [middle of transcript omitted; continue with later Q&A] "
+        + compact[-qa_chars:]
+    )
+
+
 def _money(value, currency: str) -> str:
     try:
         number = float(value)
@@ -82,6 +135,7 @@ def build_latest_financial_evidence_prefix(
     *,
     api_key: str | None = None,
     fetcher: Callable[[str, str], dict | None] | None = None,
+    transcript_fetcher: Callable[[str, str, int, str], dict | None] | None = None,
 ) -> str:
     """Return a compact freshness anchor for one-company latest earnings queries."""
     if not isinstance(message, str) or not _is_latest_financial_question(message):
@@ -119,10 +173,44 @@ def build_latest_financial_evidence_prefix(
         f"operatingIncome={_money(row.get('operatingIncome'), currency)}; "
         f"netIncome={_money(row.get('netIncome'), currency)}; dilutedEPS={diluted_eps}"
     )
-    return (
+    financial_prefix = (
         "(latest-financial-evidence: Deterministic current quarterly statement anchor; "
         f"{evidence}. Never label any earnings release or call older than periodEnd as latest. "
         "For a latest call, use the matching-period transcript or official investor-relations "
         "release/prepared remarks; if unavailable, state that limitation without substituting "
         "an older call.)\n"
+    )
+    if not _CALL_INTENT_RE.search(message):
+        return financial_prefix
+    if "(latest-call-evidence:" in message[:40_000]:
+        return financial_prefix
+
+    quarter_match = re.fullmatch(r"Q([1-4])", str(period), re.IGNORECASE)
+    if not quarter_match or fiscal_year == "unknown":
+        return financial_prefix
+    try:
+        transcript = (transcript_fetcher or _fetch_matching_transcript)(
+            symbol,
+            str(fiscal_year),
+            int(quarter_match.group(1)),
+            key,
+        )
+    except Exception:
+        transcript = None
+    content = str((transcript or {}).get("content") or "").strip()
+    if not content:
+        return financial_prefix + (
+            "(latest-call-evidence: No transcript matching the deterministic latest "
+            f"quarter FY{fiscal_year} {period} was returned. Do not summarize or "
+            "substitute any older earnings call; answer from the matching official "
+            "release/prepared remarks or state the limitation.)\n"
+        )
+    transcript_period = transcript.get("period") or period
+    transcript_year = transcript.get("year") or fiscal_year
+    transcript_date = transcript.get("date") or "unknown"
+    return financial_prefix + (
+        "(latest-call-evidence: Deterministic transcript matched to the latest quarter; "
+        f"symbol={symbol}; matchingQuarter=FY{transcript_year} {transcript_period}; "
+        f"callDate={transcript_date}; transcriptContent={_transcript_excerpt(content)}. "
+        "Use this matching transcript, not any older call.)\n"
     )
