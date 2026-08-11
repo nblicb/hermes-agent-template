@@ -166,10 +166,22 @@ one company.
   unavailable, explicitly state that transcript/call details were not available.
 - If any required metric is unavailable after lookup, state that limitation
   instead of silently omitting it or filling it with unrelated valuation data.
-- For a latest-financial-data request, call the FMP `statements` tool. At minimum
-  request `income-statement`, `cashflow-statement`, and `balance-sheet-statement`
-  for the symbol with `period=quarter`; use the newest reported row. Never answer
-  with a capability refusal before attempting those tools.
+- For a latest-financial-data request, call the FMP `statements` tool with
+  `period=quarter`. Query `income-statement` first and use its newest reported
+  row for the fiscal period/date, revenue, gross profit or margin, operating
+  income, net income, and EPS. Then add `cashflow-statement` and
+  `balance-sheet-statement` for the same newest fiscal period when the user asks
+  for cash flow, capex, liquidity, or a full recap. Never answer with a
+  capability refusal before attempting the statement tool.
+- Treat `quarter`, `year`, and `TTM` as different scopes. Never label TTM key
+  metrics, ratios, growth data, or annual figures as the latest quarter. Before
+  answering, verify that fiscal period/date, revenue, net income, and EPS come
+  from the same newest quarterly income-statement row. If a secondary dataset
+  has a different scope, label it separately or discard it; do not mix it into
+  the quarterly recap.
+- Preserve source-safe USD units. In Chinese answers prefer `$41.46B`,
+  `$28.24B`, `$24.67` (or the exact source units) rather than converting
+  billions into `亿美元`. Never move a decimal point during localization.
 - For an earnings-call / 电话会议 / transcript request, call
   `earningsTranscript` with `transcripts-dates-by-symbol` first, then call
   `search-transcripts` for the newest fiscal year and quarter. Summarize the
