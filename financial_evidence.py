@@ -116,6 +116,15 @@ def _transcript_excerpt(content: str) -> str:
     )
 
 
+def _response_language_guard(message: str) -> str:
+    if any("\u4e00" <= char <= "\u9fff" for char in message):
+        return (
+            "(response-language: 用户使用中文提问；最终答案必须使用中文，"
+            "英文仅保留公司名、Ticker和必要的财务术语。)\n"
+        )
+    return ""
+
+
 def _money(value, currency: str) -> str:
     try:
         number = float(value)
@@ -204,7 +213,7 @@ def build_latest_financial_evidence_prefix(
             f"quarter FY{fiscal_year} {period} was returned. Do not summarize or "
             "substitute any older earnings call; answer from the matching official "
             "release/prepared remarks or state the limitation.)\n"
-        )
+        ) + _response_language_guard(message)
     transcript_period = transcript.get("period") or period
     transcript_year = transcript.get("year") or fiscal_year
     transcript_date = transcript.get("date") or "unknown"
@@ -213,4 +222,4 @@ def build_latest_financial_evidence_prefix(
         f"symbol={symbol}; matchingQuarter=FY{transcript_year} {transcript_period}; "
         f"callDate={transcript_date}; transcriptContent={_transcript_excerpt(content)}. "
         "Use this matching transcript, not any older call.)\n"
-    )
+    ) + _response_language_guard(message)

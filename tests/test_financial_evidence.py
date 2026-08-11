@@ -53,6 +53,7 @@ def test_latest_call_gets_deterministic_current_quarter_anchor():
     assert "matchingQuarter=FY2027 Q1" in prefix
     assert "callDate=2026-05-20" in prefix
     assert "Total revenue was $82 billion" in prefix
+    assert "最终答案必须使用中文" in prefix
 
 
 def test_explicit_historical_period_does_not_get_latest_anchor():
