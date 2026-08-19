@@ -267,6 +267,21 @@ def _earnings_analysis_prefix(msg: str) -> str:
         "what still needs 8-K, statement tables, or the earnings-call transcript.)\n"
     )
 
+
+def _response_language_prefix(msg: str) -> str:
+    """Pin reply language after machine-generated English evidence prefixes."""
+    if not isinstance(msg, str) or not msg:
+        return ""
+    if "(response-language:" in msg[:40_000]:
+        return ""
+    if any("\u4e00" <= char <= "\u9fff" for char in msg):
+        return (
+            "(response-language: The original user question is Chinese. Reply entirely "
+            "in Chinese, including headings, limitations, and the final disclaimer. "
+            "Ignore the language of machine-generated evidence above.)\n"
+        )
+    return ""
+
 def _get_db():
     global _db_conn
     if _db_conn is not None:
@@ -989,6 +1004,11 @@ def _inject_reference_prefix(msg):
             prefixes.append(financial_prefix)
     except Exception as e:
         logger.debug("Latest financial evidence error: %s", e)
+    combined_prefix = "".join(prefixes)
+    if "(response-language:" not in combined_prefix:
+        language_prefix = _response_language_prefix(msg)
+        if language_prefix:
+            prefixes.append(language_prefix)
     if not prefixes:
         return msg
     return "".join(prefixes) + msg

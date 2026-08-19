@@ -2,7 +2,7 @@ from pathlib import Path
 
 import financial_evidence
 from financial_evidence import build_latest_financial_evidence_prefix
-from rate_limit import _inject_reference_prefix
+from rate_limit import _inject_reference_prefix, _response_language_prefix
 from ticker_resolver import resolve_query_tickers
 
 
@@ -101,6 +101,26 @@ def test_non_us_statement_preserves_currency_and_rejects_adr_eps_as_issuer_eps()
     assert "revenue=TWD 1270.381B" in prefix
     assert "ADR-equivalent EPS" in prefix
     assert "dilutedEPS=136.25" not in prefix
+
+
+def test_plain_chinese_financial_question_always_gets_language_guard():
+    prefix = build_latest_financial_evidence_prefix(
+        "英伟达最新财报数据如何？",
+        api_key="test-key",
+        fetcher=lambda symbol, _key: NVDA_ROW if symbol == "NVDA" else None,
+        transcript_fetcher=lambda _symbol, _year, _quarter, _key: None,
+    )
+    assert "最终答案必须使用中文" in prefix
+
+
+def test_non_financial_chinese_query_gets_shared_language_guard():
+    prefix = _response_language_prefix("NVDA 最近股价走势如何？")
+    assert "Reply entirely in Chinese" in prefix
+    assert "final disclaimer" in prefix
+
+
+def test_english_query_does_not_get_chinese_language_guard():
+    assert _response_language_prefix("How is NVDA trading today?") == ""
 
 
 def test_matching_transcript_can_correct_statement_provider_eps():

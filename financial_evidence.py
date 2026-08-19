@@ -227,13 +227,14 @@ def build_latest_financial_evidence_prefix(
         "release/prepared remarks; if unavailable, state that limitation without substituting "
         "an older call.)\n"
     )
+    language_guard = _response_language_guard(message)
     requires_transcript_context = bool(_TRANSCRIPT_CONTEXT_RE.search(message))
     if "(latest-call-evidence:" in message[:40_000]:
-        return financial_prefix
+        return financial_prefix + language_guard
 
     quarter_match = re.fullmatch(r"Q([1-4])", str(period), re.IGNORECASE)
     if not quarter_match or fiscal_year == "unknown":
-        return financial_prefix
+        return financial_prefix + language_guard
     try:
         transcript = (transcript_fetcher or _fetch_matching_transcript)(
             symbol,
@@ -246,13 +247,13 @@ def build_latest_financial_evidence_prefix(
     content = str((transcript or {}).get("content") or "").strip()
     if not content:
         if not requires_transcript_context:
-            return financial_prefix
+            return financial_prefix + language_guard
         return financial_prefix + (
             "(latest-call-evidence: No transcript matching the deterministic latest "
             f"quarter FY{fiscal_year} {period} was returned. Do not summarize or "
             "substitute any older earnings call; answer from the matching official "
             "release/prepared remarks or state the limitation.)\n"
-        ) + _period_comparison_guard(str(fiscal_year), str(period)) + _response_language_guard(message)
+        ) + _period_comparison_guard(str(fiscal_year), str(period)) + language_guard
     transcript_period = transcript.get("period") or period
     transcript_year = transcript.get("year") or fiscal_year
     transcript_date = transcript.get("date") or "unknown"
@@ -261,4 +262,4 @@ def build_latest_financial_evidence_prefix(
         f"symbol={symbol}; matchingQuarter=FY{transcript_year} {transcript_period}; "
         f"callDate={transcript_date}; transcriptContent={_transcript_excerpt(content)}. "
         "Use this matching transcript, not any older call.)\n"
-    ) + _period_comparison_guard(str(fiscal_year), str(period)) + _response_language_guard(message)
+    ) + _period_comparison_guard(str(fiscal_year), str(period)) + language_guard

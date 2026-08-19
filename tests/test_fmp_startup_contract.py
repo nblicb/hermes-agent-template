@@ -27,6 +27,8 @@ def test_latest_financial_data_cannot_mix_ttm_with_quarterly_statements():
     assert "Never label TTM key" in start_script
     assert "same newest quarterly income-statement row" in start_script
     assert "Never move a decimal point during localization" in start_script
+    assert "Cash from operations is not free cash flow" in start_script
+    assert 'Never call free cash flow "GAAP FCF"' in start_script
 
 
 def test_transcript_numbers_preserve_period_and_language_contract():
