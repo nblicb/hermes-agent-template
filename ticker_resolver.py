@@ -61,9 +61,11 @@ _POPULAR_TICKERS = {
 # - US tickers: AAPL, BRK.B
 # - Crypto USD pairs: BTCUSD, USDTUSD
 # - HK/JP/KR/TW listings: 0700.HK, 7203.T, 005930.KS, 2330.TW, 5274.TWO
-# Word boundary ensures we don't pull tickers out of random ALLCAPS noise.
+# ASCII lookarounds keep tickers out of longer Latin tokens while still allowing
+# compact mixed-language queries such as ``PLTR最新财报`` and ``MU电话会``.
 _TICKER_RE = re.compile(
-    r"\b([A-Z0-9]{2,14}USD|\d{4}\.(?:TWO|TW|HK|T)|\d{6}\.(?:KS|KQ)|[A-Z]{1,6}(?:\.[A-Z])?)\b"
+    r"(?<![A-Za-z0-9])([A-Z0-9]{2,14}USD|\d{4}\.(?:TWO|TW|HK|T)|"
+    r"\d{6}\.(?:KS|KQ)|[A-Z]{1,6}(?:\.[A-Z])?)(?![A-Za-z0-9])"
 )
 
 # Common English all-caps words that match the regex but aren't tickers.
@@ -312,6 +314,11 @@ for _symbol, _aliases in {
     _extend_crypto_aliases(_symbol, *_aliases)
 
 _GLOBAL_COMPANY_ALIASES: tuple[tuple[str, str, str], ...] = (
+    # Common US-company Chinese names missing from some provider snapshots
+    ("美光", "MU", "Micron Technology"),
+    ("美光科技", "MU", "Micron Technology"),
+    ("帕兰提尔", "PLTR", "Palantir Technologies"),
+    ("帕兰蒂尔", "PLTR", "Palantir Technologies"),
     # Hong Kong
     ("腾讯", "0700.HK", "Tencent Holdings"),
     ("腾讯控股", "0700.HK", "Tencent Holdings"),
@@ -639,7 +646,8 @@ def extract_tickers(text: str) -> list[str]:
     # Also try tokens that are lowercase but resolve to known tickers
     # (handles user typing "crwv" instead of "CRWV").
     for tok in re.findall(
-        r"\b(?:[A-Za-z0-9]{2,14}USD|\d{4}\.(?:TWO|TW|HK|T)|\d{6}\.(?:KS|KQ)|[A-Za-z]{2,6}(?:\.[A-Za-z])?)\b",
+        r"(?<![A-Za-z0-9])(?:[A-Za-z0-9]{2,14}USD|\d{4}\.(?:TWO|TW|HK|T)|"
+        r"\d{6}\.(?:KS|KQ)|[A-Za-z]{2,6}(?:\.[A-Za-z])?)(?![A-Za-z0-9])",
         text,
         flags=re.IGNORECASE,
     ):

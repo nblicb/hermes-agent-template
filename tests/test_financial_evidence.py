@@ -53,6 +53,15 @@ def test_resolves_popular_chinese_company_name_for_evidence_routing():
     assert resolve_query_tickers("英伟达最新财报电话会议讲了什么？") == ["NVDA"]
 
 
+def test_resolves_compact_ticker_adjacent_to_chinese_text():
+    assert resolve_query_tickers("PLTR最近一个季度的财报数据如何？") == ["PLTR"]
+    assert resolve_query_tickers("MU最新财报和电话会议讲了什么？") == ["MU"]
+
+
+def test_resolves_common_micron_chinese_short_name():
+    assert resolve_query_tickers("美光最新财报和电话会议讲了什么？") == ["MU"]
+
+
 def test_latest_call_gets_deterministic_current_quarter_anchor():
     prefix = build_latest_financial_evidence_prefix(
         "英伟达最新财报电话会议讲了什么？",
